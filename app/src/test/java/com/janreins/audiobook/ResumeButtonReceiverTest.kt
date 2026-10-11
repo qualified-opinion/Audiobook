@@ -26,6 +26,10 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class ResumeButtonReceiverTest {
     private val context = ApplicationProvider.getApplicationContext<Application>()
+    private val provider = ResumeFixtureProvider().also {
+        it.attachInfo(context, android.content.pm.ProviderInfo().apply { authority = "books" })
+        org.robolectric.shadows.ShadowContentResolver.registerProviderInternal("books", it)
+    }
     private fun intent(key: Int) = Intent(Intent.ACTION_MEDIA_BUTTON)
         .putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, key))
 
@@ -33,13 +37,19 @@ class ResumeButtonReceiverTest {
         val snapshot = resumeSnapshot()
         for (key in listOf(KeyEvent.KEYCODE_MEDIA_PAUSE, KeyEvent.KEYCODE_MEDIA_STOP, KeyEvent.KEYCODE_MEDIA_NEXT,
             KeyEvent.KEYCODE_MEDIA_PREVIOUS, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD)) {
-            assertFalse(ResumeButtonGate.allows(key, snapshot, BookProgress(), false, { true }, { true }))
+            assertFalse(ResumeButtonGate.allows(key, snapshot, BookProgress(), false, { true }, { true }, { true }))
         }
-        assertFalse(ResumeButtonGate.allows(KeyEvent.KEYCODE_MEDIA_PLAY, null, BookProgress(), false, { true }, { true }))
-        assertFalse(ResumeButtonGate.allows(KeyEvent.KEYCODE_MEDIA_PLAY, snapshot, BookProgress(), false, { false }, { true }))
-        assertFalse(ResumeButtonGate.allows(KeyEvent.KEYCODE_MEDIA_PLAY, snapshot, BookProgress(), false, { true }, { false }))
+        assertFalse(ResumeButtonGate.allows(KeyEvent.KEYCODE_MEDIA_PLAY, null, BookProgress(), false, { true }, { true }, { true }))
+        assertFalse(ResumeButtonGate.allows(KeyEvent.KEYCODE_MEDIA_PLAY, snapshot, BookProgress(), false, { false }, { true }, { true }))
+        assertFalse(ResumeButtonGate.allows(KeyEvent.KEYCODE_MEDIA_PLAY, snapshot, BookProgress(), false, { true }, { false }, { true }))
+        // Permission held but the target document is gone (deleted, moved, SD card unmounted).
+        assertFalse(ResumeButtonGate.allows(KeyEvent.KEYCODE_MEDIA_PLAY, snapshot, BookProgress(), false, { true }, { true }, { false }))
+        var checked: String? = null
+        ResumeButtonGate.allows(KeyEvent.KEYCODE_MEDIA_PLAY, snapshot, BookProgress(0, 9500), false, { true }, { true },
+            { checked = it; true })
+        assertEquals("existence is queried for the cold-start target", snapshot.tracks[1].uri, checked)
         for (key in listOf(KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_HEADSETHOOK)) {
-            assertTrue(ResumeButtonGate.allows(key, snapshot, BookProgress(), false, { true }, { true }))
+            assertTrue(ResumeButtonGate.allows(key, snapshot, BookProgress(), false, { true }, { true }, { true }))
         }
     }
 
@@ -74,6 +84,9 @@ class ResumeButtonReceiverTest {
         prefs.saveBookProgress(snapshot.bookId, BookProgress(1, 10000))
         library.setFinished(snapshot.bookId, true)
         assertTrue(receiver.shouldStartForegroundService(context, intent(KeyEvent.KEYCODE_MEDIA_PLAY)))
+        // The Finished restart targets track 0: once that document is gone the gate refuses.
+        provider.missing += "library/one.mp3"
+        assertFalse(receiver.shouldStartForegroundService(context, intent(KeyEvent.KEYCODE_MEDIA_PLAY)))
     }
 
     @Test fun falseGateOnReceiveStartsNoService() {

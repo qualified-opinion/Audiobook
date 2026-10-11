@@ -35,10 +35,13 @@ object ResumeButtonGate {
         key == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || key == KeyEvent.KEYCODE_HEADSETHOOK
 
     fun allows(key: Int, snapshot: ResumeSnapshot?, saved: BookProgress, finished: Boolean,
-               folderAccess: (String) -> Boolean, trackAccess: (String) -> Boolean): Boolean {
+               folderAccess: (String) -> Boolean, trackAccess: (String) -> Boolean,
+               trackExists: (String) -> Boolean): Boolean {
         if (!isPlay(key) || snapshot == null || !folderAccess(snapshot.folderUri)) return false
         val target = CompletionRules.coldStart(snapshot.tracks.size, { snapshot.tracks[it].durationMs }, saved, finished)
-        return trackAccess(snapshot.tracks[target.index].uri)
+        val uri = snapshot.tracks[target.index].uri
+        // The existence query is cheap but racy; PlaybackService still handles a failed resumption.
+        return trackAccess(uri) && trackExists(uri)
     }
 }
 
@@ -57,7 +60,8 @@ class ResumeButtonReceiver : MediaButtonReceiver() {
                 { FolderAccess.hasPersistedReadAccess(context.contentResolver, it.toUri()) },
                 { uri -> context.contentResolver.persistedUriPermissions.any {
                     it.isReadPermission && ResumePermissions.covers(it.uri, uri.toUri())
-                } })
+                } },
+                { PlaybackResumption.documentExists(context, it) })
         } catch (_: Exception) { false }
     }
 }

@@ -54,11 +54,14 @@ class PlaybackResumption(
             return PlaybackResumption({ store.read(deleteInvalid = it) }, prefs::getBookProgress,
                 library::isFinished,
                 { FolderAccess.hasPersistedReadAccess(context.contentResolver, it.toUri()) },
-                { uri ->
-                    context.contentResolver.query(uri.toUri(),
-                        arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null)
-                        ?.use { it.moveToFirst() } == true
-                }, prefs::setResumeUnavailable, executor)
+                { documentExists(context, it) }, prefs::setResumeUnavailable, executor)
         }
+
+        /** One cheap provider query: false when the document is gone, unreadable or the provider is absent. */
+        fun documentExists(context: Context, uri: String): Boolean = try {
+            context.contentResolver.query(uri.toUri(),
+                arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null)
+                ?.use { it.moveToFirst() } == true
+        } catch (_: Exception) { false }
     }
 }

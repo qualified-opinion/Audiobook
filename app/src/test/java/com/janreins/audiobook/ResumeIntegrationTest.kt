@@ -50,6 +50,7 @@ import java.io.File
 class ResumeFixtureProvider : ContentProvider() {
     var rootReadable = false
     var exposeBook = false
+    val missing = mutableSetOf<String>()
     private lateinit var audio: File
     override fun onCreate(): Boolean {
         audio = File(requireNotNull(context).cacheDir, "resume-fixture.mp3")
@@ -81,7 +82,7 @@ class ResumeFixtureProvider : ContentProvider() {
             if (id == "library") {
                 if (!rootReadable) return null
                 add(id, directory = true)
-            } else add(id)
+            } else if (id !in missing) add(id)
         }
         return cursor
     }
@@ -234,6 +235,52 @@ class ResumeIntegrationTest {
         assertNoServiceStartOrForeground()
     }
 
+    private fun mediaButton(key: Int) = Intent(Intent.ACTION_MEDIA_BUTTON)
+        .setComponent(ComponentName(context, PlaybackService::class.java))
+        .putExtra(Intent.EXTRA_KEY_EVENT, android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, key))
+
+    @Test fun coldPressWhoseTargetVanishesAfterTheGatePostsThenRemovesForegroundAndStops() {
+        // Kiln's PR #13 repro: permission still held, the gate passes, then the target track disappears
+        // (deleted/moved/SD card unmounted) before resumption runs in the foreground-started service.
+        provider.rootReadable = true
+        val receiver = com.janreins.audiobook.player.ResumeButtonReceiver()
+        val play = mediaButton(android.view.KeyEvent.KEYCODE_MEDIA_PLAY)
+        assertTrue(receiver.shouldStartForegroundService(context, play))
+        provider.missing += "library/two.mp3"
+        assertFalse("the gate now queries the target", receiver.shouldStartForegroundService(context, play))
+        val service = serviceController.get()
+        val shadow = shadowOf(service)
+        val notifications = shadowOf(context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+        service.onStartCommand(play, 0, 1)
+        await("unavailable notice and stop") { shadow.isStoppedBySelf }
+        settle()
+        // Posted: startForeground ran with our id (Robolectric keeps the id after removal) on Media3's channel.
+        assertEquals(PlaybackService.RESUME_UNAVAILABLE_NOTIFICATION_ID, shadow.lastForegroundNotificationId)
+        assertNotNull((context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).getNotificationChannel(
+            androidx.media3.session.DefaultMediaNotificationProvider.DEFAULT_CHANNEL_ID))
+        // Removed: STOP_FOREGROUND_REMOVE cancels it and clears the foreground notification.
+        assertNull(shadow.lastForegroundNotification)
+        assertTrue(shadow.isForegroundStopped)
+        assertTrue(shadow.isStoppedBySelf)
+        assertTrue("removed", notifications.allNotifications.isEmpty())
+        assertEquals(0, session.player.mediaItemCount)
+        assertNull(field("appContext").get(null))
+        assertTrue(prefs.consumeResumeUnavailable())
+        assertNotNull("an unmounted card may come back", store.read())
+    }
+
+    @Test fun coldPressWithTargetPresentUsesOnlyMedia3PlaybackHandling() {
+        provider.rootReadable = true
+        val service = serviceController.get()
+        service.onStartCommand(mediaButton(android.view.KeyEvent.KEYCODE_MEDIA_PLAY), 0, 1)
+        await("resumed") { session.player.mediaItemCount == 2 && session.player.playWhenReady && managerController() != null }
+        settle()
+        val shadow = shadowOf(service)
+        assertFalse(shadow.isStoppedBySelf)
+        assertNotEquals(PlaybackService.RESUME_UNAVAILABLE_NOTIFICATION_ID, shadow.lastForegroundNotificationId)
+        assertFalse(prefs.consumeResumeUnavailable())
+    }
+
     @Test fun readOnlyServiceCallbackDoesNotInitializeOrChangePreferencesSpeedOrQueue() {
         connectHeadset()
         prefs.savePlaybackSpeed(1.5f)
@@ -343,7 +390,7 @@ class ResumeIntegrationTest {
         assertEquals(0, session.player.mediaItemCount)
     }
 
-    @Test fun successfulScanDoesNotClearTheBookWhileItsQueueIsLoaded() {
+    @Test fun successfulScanWithoutTheBookClearsSnapshotButKeepsLoadedQueueAndBook() {
         connectHeadset().play()
         await("loaded queue") { session.player.mediaItemCount == 2 && managerController() != null }
         AudiobookPlayerManager.reconcileLibrary(emptyList(), scanSucceeded = true)
