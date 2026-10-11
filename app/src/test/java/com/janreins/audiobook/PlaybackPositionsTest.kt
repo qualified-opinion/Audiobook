@@ -5,6 +5,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PlaybackPositionsTest {
+    @Test fun tracksNoLongerThanTheToleranceAreNotNearTheirEndAtTheStart() {
+        // Regression (#11 review): a 1.5 s first track at position 0 must not skip to track 2.
+        assertEquals(0 to 0L, PlaybackPositions.resumePoint(0, 3, 0, 1500))
+        assertEquals(1 to 500L, PlaybackPositions.resumePoint(1, 3, 500, 1500))
+        assertEquals(2 to 0L, PlaybackPositions.resumePoint(2, 3, 0, 1500))
+        assertEquals(0 to 0L, PlaybackPositions.resumePoint(0, 3, 0, 2000))
+        assertEquals(1 to 0L, PlaybackPositions.resumePoint(0, 3, 1, 2001))
+    }
+
     @Test fun savedProgressAdvancesFromNonLastTrackEnd() {
         for (position in listOf(8000L, 9000L, 10000L, 12000L)) {
             assertEquals(1 to 0L, PlaybackPositions.resumePoint(0, 3, position, 10000))
@@ -14,7 +23,8 @@ class PlaybackPositionsTest {
     @Test fun unfinishedLastTrackPlaysTheTailIncludingSingleTrackBooks() {
         assertEquals(2 to 8000L, PlaybackPositions.resumePoint(2, 3, 9000, 10000))
         assertEquals(0 to 8000L, PlaybackPositions.resumePoint(0, 1, 10000, 10000))
-        assertEquals(0 to 0L, PlaybackPositions.resumePoint(0, 1, 500, 1000))
+        // A track no longer than the 2 s tolerance has no "tail": it resumes where it was.
+        assertEquals(0 to 500L, PlaybackPositions.resumePoint(0, 1, 500, 1000))
     }
 
     @Test fun ordinaryAndUnknownDurationProgressIsClamped() {

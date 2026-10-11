@@ -7,7 +7,9 @@ object PlaybackPositions {
     /** Saved progress near a track end advances, or plays the final two seconds of the book. */
     fun resumePoint(trackIndex: Int, trackCount: Int, savedMs: Long, trackDurationMs: Long): Pair<Int, Long> {
         val index = trackIndex.coerceIn(0, (trackCount - 1).coerceAtLeast(0))
-        if (savedMs >= 0 && trackDurationMs > 0 && savedMs >= trackDurationMs - CompletionRules.END_TOLERANCE_MS) {
+        // A track no longer than the tolerance is never "near its end" at its start.
+        if (savedMs >= 0 && trackDurationMs > CompletionRules.END_TOLERANCE_MS &&
+            savedMs >= trackDurationMs - CompletionRules.END_TOLERANCE_MS) {
             return if (index < trackCount - 1) index + 1 to 0L
             else index to (trackDurationMs - CompletionRules.END_TOLERANCE_MS).coerceAtLeast(0L)
         }
