@@ -129,18 +129,39 @@ object ChapterRepository {
         }
     }
 
-    private suspend fun extract(track: AudioTrack): List<RawChapter> {
-        val retriever = newRetriever(context, track.uri)
+    private suspend fun extract(track: AudioTrack): List<RawChapter> = extractTwoPass(
+        fast = { readChapters(fastRetriever(context, track.uri)) },
+        full = { readChapters(newRetriever(context, track.uri)) }
+    )
+
+    // The full read builds the whole sample table (~3.7 MB/hour of audio, ~150 MB transient heap for a
+    // 40 h single-file M4B). ffmpeg-made M4Bs carry Nero chpl by default and resolve on the fast pass.
+    // QuickTime-only or chapterless files pay one extra header-only moov read, once per file, then cached.
+    // When both chpl and QuickTime exist, chpl wins (the same source in practice). Exactly 255 chapters
+    // may mean truncation of the commonly 8-bit chpl count, so try the full read in that case too.
+    internal suspend fun extractTwoPass(
+        fast: suspend () -> List<RawChapter>,
+        full: suspend () -> List<RawChapter>
+    ): List<RawChapter> {
+        val chapters = fast()
+        return if (chapters.isEmpty() || chapters.size == 255) full().ifEmpty { chapters } else chapters
+    }
+
+    private suspend fun readChapters(retriever: MetadataRetriever): List<RawChapter> {
         try {
             // Formats within an adaptive group share chapters; use one audio format per group.
             return chaptersOf(retriever.retrieveTrackGroups().await())
         } finally { retriever.close() }
     }
 
+    /** Default MP4 flags include FLAG_OMIT_TRACK_SAMPLE_TABLE: Nero chpl is read, QuickTime tracks are skipped. */
+    internal fun fastRetriever(context: Context, uri: Uri): MetadataRetriever =
+        MetadataRetriever.Builder(context, MediaItem.fromUri(uri)).build()
+
     /**
-     * MetadataRetriever's default MP4 flags include FLAG_OMIT_TRACK_SAMPLE_TABLE, which skips the QuickTime
-     * chapter track (only Nero chpl would be found). Reading the full sample table costs memory for long
-     * M4Bs, but only once per file, lazily, and the result is cached.
+     * Full pass for QuickTime chapter tracks, used only when the fast pass finds zero or exactly 255 chapters.
+     * Reading the full sample table still costs memory for long QuickTime-only M4Bs (~3.7 MB/hour), but
+     * only once per file, lazily, and the result is cached.
      * Safe off the main thread: the retriever runs on Media3's shared worker thread, not the caller's looper.
      */
     internal fun newRetriever(context: Context, uri: Uri): MetadataRetriever =

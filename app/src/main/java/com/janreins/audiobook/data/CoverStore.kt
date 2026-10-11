@@ -53,8 +53,8 @@ class CoverStore(
      * Nothing about them is persisted, so the next launch reads the audio file again; within this process
      * they are not re-read on every scroll.
      */
-    private val failedEmbeddedReads = object : LinkedHashMap<String, ByteArray?>() {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ByteArray?>) = size > 64
+    private val failedEmbeddedReads = object : LinkedHashMap<String, ByteArray?>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ByteArray?>) = size > MAX_FAILED_READS
     }
 
     /** Cached thumbnails only; see [thumbnail] for the in-memory fallback. */
@@ -160,6 +160,7 @@ class CoverStore(
 
     companion object {
         private val cacheMutex = Mutex()
+        internal const val MAX_FAILED_READS = 64
         internal const val MAX_THUMBNAILS = 600
         internal const val TRIM_THUMBNAILS_TO = 500
         internal const val MAX_MARKERS = 2000

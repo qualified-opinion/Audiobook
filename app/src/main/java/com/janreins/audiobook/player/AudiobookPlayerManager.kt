@@ -115,7 +115,8 @@ object AudiobookPlayerManager {
         override fun onPlaybackStateChanged(playbackState: Int) {
             val player = controller ?: return
             updatePosition(player)
-            if (playbackState == Player.STATE_ENDED && !applyingFinished) {
+            // An empty queue (after mark finished) also reports ENDED; it must not re-mark the book Finished.
+            if (playbackState == Player.STATE_ENDED && !applyingFinished && player.currentMediaItem != null) {
                 _isPlaying.value = false
                 _currentBook.value?.let { libraryStateStore?.setFinished(it.id, true) }
                 persistPosition()
@@ -395,6 +396,9 @@ object AudiobookPlayerManager {
     fun seekTo(positionMs: Long) = withController { seek(it, positionMs) }
 
     private fun seek(player: MediaController, positionMs: Long) {
+        // Queue cleared by mark finished: there is nothing to seek in, and the empty player's position (0)
+        // must not overwrite the stored end of the book. Play restarts it instead.
+        if (player.currentMediaItem == null) return
         val duration = player.duration.takeIf { it != C.TIME_UNSET } ?: _durationMs.value
         val position = SeekMath.clampSeek(positionMs, 0, duration)
         player.seekTo(position)
@@ -403,6 +407,7 @@ object AudiobookPlayerManager {
     }
 
     fun skip(deltaMs: Long) = withController { player ->
+        if (player.currentMediaItem == null) return@withController
         seek(player, SeekMath.clampSeek(player.currentPosition, deltaMs, player.duration))
     }
 

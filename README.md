@@ -73,6 +73,8 @@ Open **Chapters** beside the current chapter title to see titles, start times re
 
 Chapter metadata is cached privately per file, including files with no embedded chapters. Size or modification time changes invalidate the cache, and library scans prune removed files. All extraction and caching stays offline.
 
+Nero `chpl` chapters use a fast read; files with no chapters or exactly 255 chapters on that pass fall back to a full sample-table read (about 3.7 MB of memory per hour of audio for long QuickTime-only M4Bs), once per file before caching.
+
 ## How to Open and Run (for Beginners)
 
 To build from the command line with JDK 17+, run `./gradlew assembleDebug` from the project's root folder.

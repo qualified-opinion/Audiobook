@@ -205,6 +205,29 @@ class CoverStoreTest {
         assertColor(file, 255, 0)
     }
 
+    @Test fun failedEmbeddedReadsEvictLeastRecentlyUsed() = runBlocking {
+        val calls = mutableMapOf<Uri, Int>()
+        val store = CoverStore(context) { uri ->
+            calls[uri] = (calls[uri] ?: 0) + 1
+            throw java.io.IOException("unsupported")
+        }
+        val folder = folderModel()
+        val sources = (0..CoverStore.MAX_FAILED_READS).map { index ->
+            folder.copy(firstTrackUri = Uri.parse("content://books/$index"), firstTrackKey = "$index|50|1")
+        }
+        repeat(CoverStore.MAX_FAILED_READS) { index ->
+            assertTrue(store.thumbnail(sources[index]) is CoverThumbnail.InMemory)
+        }
+        val first = store.thumbnail(sources[0]) as CoverThumbnail.InMemory
+        assertEquals(1, calls[sources[0].firstTrackUri])
+        assertTrue(store.thumbnail(sources.last()) is CoverThumbnail.InMemory)
+        val retained = store.thumbnail(sources[0]) as CoverThumbnail.InMemory
+        assertSame(first.jpeg, retained.jpeg)
+        assertEquals(1, calls[sources[0].firstTrackUri])
+        assertTrue(store.thumbnail(sources[1]) is CoverThumbnail.InMemory)
+        assertEquals(2, calls[sources[1].firstTrackUri])
+    }
+
     @Test fun hitsOlderThanFiveMinutesAreRefreshedButRecentOnesAreNot() = runBlocking {
         val store = CoverStore(context) { image(Color.RED) }
         val file = requireNotNull(store.thumbnailFile(model))
