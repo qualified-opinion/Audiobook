@@ -15,6 +15,8 @@ import com.janreins.audiobook.data.PreferencesManager
 import com.janreins.audiobook.data.model.AudioTrack
 import com.janreins.audiobook.data.model.Audiobook
 import com.janreins.audiobook.player.AudiobookPlayerManager
+import com.janreins.audiobook.data.ResumeSnapshotStore
+import com.janreins.audiobook.player.PlaybackResumption
 import com.janreins.audiobook.player.PlaybackPositions
 import com.janreins.audiobook.player.SessionPlayer
 import com.janreins.audiobook.player.SessionSettings
@@ -70,7 +72,13 @@ class ClearedQueueRegressionTest {
             override fun smartRewindEnabled() = true
             override fun isFinished(bookId: String) = library.isFinished(bookId)
         }, { null })
-        session = MediaSession.Builder(context, sessionPlayer).build()
+        val resumption = PlaybackResumption({ ResumeSnapshotStore(context).read(deleteInvalid = it) },
+            prefs::getBookProgress, library::isFinished, { true }, { true }, prefs::setResumeUnavailable,
+            java.util.concurrent.Executor { it.run() })
+        session = MediaSession.Builder(context, sessionPlayer).setCallback(object : MediaSession.Callback {
+            override fun onPlaybackResumption(session: MediaSession, controller: MediaSession.ControllerInfo,
+                isForPlayback: Boolean) = resumption.resume(isForPlayback)
+        }).build()
         val f = MediaController.Builder(context, session.token).buildAsync(); settle(); controller = f.get()
         val h = MediaController.Builder(context, session.token).buildAsync(); settle(); headset = h.get()
         set("controller", controller); set("appContext", null); set("prefsManager", null)
@@ -83,6 +91,7 @@ class ClearedQueueRegressionTest {
         listener = field("listener").get(null) as Player.Listener
         controller.addListener(listener)
         viewModel = MainViewModel(context)
+        prefs.saveFolderUri("content://books/tree/library")
     }
 
     @After fun cleanup() {
@@ -106,7 +115,10 @@ class ClearedQueueRegressionTest {
         assertFalse(s(), library.isFinished(book.id))
         headset.play(); settle()
         assertFalse(s(), library.isFinished(book.id))
-        assertEquals(s(), BookProgress(), prefs.getBookProgress(book.id))
+        assertEquals(s(), 0, prefs.getBookProgress(book.id).trackIndex)
+        assertTrue(s(), prefs.getBookProgress(book.id).positionMs < 2000)
+        assertEquals(s(), 3, exo.mediaItemCount)
+        assertTrue(s(), exo.playWhenReady)
         assertTrue(errors.toString(), errors.isEmpty())
     }
 
@@ -123,15 +135,15 @@ class ClearedQueueRegressionTest {
         assertFalse(s(), library.isFinished(book.id))
     }
 
-    @Test fun headsetPlayOnClearedQueueDoesNotCrashAndAppPlayStillRestarts() {
-        // Headset/BT resumption of a cleared queue is deferred (onPlaybackResumption); it must stay harmless.
+    @Test fun headsetPlayOnClearedQueueRestartsFinishedBookInOnePress() {
         loadAndMarkFinished()
         headset.play(); settle()
-        assertTrue(s(), library.isFinished(book.id))
-        assertTrue(errors.toString(), errors.isEmpty())
-        viewModel.togglePlayPause(context); settle()
+        assertEquals(s(), 3, exo.mediaItemCount)
         assertEquals(s(), 0, exo.currentMediaItemIndex)
+        assertTrue(s(), exo.currentPosition < 2000)
+        assertTrue(s(), exo.playWhenReady)
         assertFalse(s(), library.isFinished(book.id))
+        assertTrue(errors.toString(), errors.isEmpty())
     }
 
     @Test fun neverPlayedBookWithShortFirstTrackStartsOnTrackOne() {

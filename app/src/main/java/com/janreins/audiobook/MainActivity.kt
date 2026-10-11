@@ -134,6 +134,8 @@ fun AudiobookApp(
             AppScreen.LIBRARY -> {
                 LibraryScreen(
                     audiobooks = audiobooks,
+                    message = folderMessage,
+                    onDismissMessage = viewModel::dismissFolderMessage,
                     chapterTitle = chapters?.takeIf { it.navigable }?.chapters?.getOrNull(currentChapter)?.title,
                     libraryVersion = libraryVersion,
                     sort = librarySort,

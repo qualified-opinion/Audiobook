@@ -45,6 +45,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -105,7 +107,9 @@ fun LibraryScreen(
     onSortChange: (LibrarySort) -> Unit = {},
     onFilterChange: (LibraryFilter) -> Unit = {},
     onMarkFinished: (Audiobook) -> Unit = {},
-    onMarkUnplayed: (Audiobook) -> Unit = {}
+    onMarkUnplayed: (Audiobook) -> Unit = {},
+    message: String? = null,
+    onDismissMessage: () -> Unit = {}
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var showThemeDialog by remember { mutableStateOf(false) }
@@ -125,6 +129,12 @@ fun LibraryScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        snackbarHost = {
+            if (message != null) Snackbar(
+                modifier = Modifier.padding(16.dp),
+                action = { TextButton(onClick = onDismissMessage) { Text("Dismiss") } }
+            ) { Text(message) }
+        },
         topBar = {
             TopAppBar(
                 title = {

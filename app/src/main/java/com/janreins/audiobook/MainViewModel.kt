@@ -16,6 +16,7 @@ import com.janreins.audiobook.data.LibraryStateStore
 import com.janreins.audiobook.data.LibrarySort
 import com.janreins.audiobook.data.LibraryFilter
 import com.janreins.audiobook.data.model.BookProgress
+import com.janreins.audiobook.data.ResumeSnapshotStore
 import com.janreins.audiobook.data.ProgressMigration
 import com.janreins.audiobook.data.PreferencesManager
 import com.janreins.audiobook.data.model.Audiobook
@@ -151,6 +152,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     init {
         AudiobookPlayerManager.initialize(application)
         checkSavedFolder()
+        if (prefs.consumeResumeUnavailable()) _folderMessage.value = "Last book unavailable"
     }
 
     /**
@@ -200,6 +202,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+        ResumeSnapshotStore(context).clear()
         _folderMessage.value = null
         prefs.saveFolderUri(uri.toString())
         _folderUri.value = uri
@@ -214,12 +217,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (uri == null) return
         viewModelScope.launch {
             _isLoading.value = true
-            val books = repository.loadAudiobooksFromFolder(uri)
+            val scan = repository.loadLibrary(uri)
+            val books = scan.books
             books.forEach { book ->
                 ProgressMigration.migrate(book, prefs::hasBookProgress, prefs::getPlaybackPosition,
                     prefs::saveBookProgress, prefs::getBookmarks, prefs::saveBookmarks,
                     prefs::isMigrated, prefs::markMigrated, prefs::getLastPlayedBookId, prefs::saveLastPlayedBookId)
             }
+            // Ignore a result from a folder that was replaced while the scan was running.
+            if (_folderUri.value != null && _folderUri.value != uri) {
+                _isLoading.value = false
+                return@launch
+            }
+            AudiobookPlayerManager.reconcileLibrary(books, scan.succeeded)
             _audiobooks.value = books
             _isLoading.value = false
 
@@ -330,6 +340,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val index = progress.trackIndex.coerceIn(0, book.trackCount - 1)
         return book.tracks.take(index).sumOf { it.durationMs } + progress.positionMs
     }
+
+    fun dismissFolderMessage() { _folderMessage.value = null }
 
     fun dismissError() {
         AudiobookPlayerManager.clearErrorMessage()

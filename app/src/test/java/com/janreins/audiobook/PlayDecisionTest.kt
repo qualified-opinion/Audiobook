@@ -3,7 +3,6 @@ package com.janreins.audiobook
 import androidx.media3.common.Player
 import com.janreins.audiobook.player.CompletionRules
 import com.janreins.audiobook.player.PlayDecision
-import com.janreins.audiobook.player.PlaybackPositions
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -12,7 +11,8 @@ class PlayDecisionTest {
         assertTrue(PlayDecision.needsPlayBook(true, true, Player.STATE_READY, true, 2, 3, 99000, 100000))
         assertTrue(CompletionRules.restartOnPlay(false, true,
             CompletionRules.isAtEnd(2, 3, 99000, 100000, true)))
-        assertEquals(0 to 0L, PlaybackPositions.startPoint(0, 3, 0, 100000, savedProgress = false))
+        assertEquals(CompletionRules.ColdStart(0, 0L, true), CompletionRules.coldStart(3, { 100000L },
+            com.janreins.audiobook.data.model.BookProgress(2, 99000), finished = true))
     }
 
     @Test fun inAppPlayerButtonRestartsInOnePress() = appPlayRestartsFinishedEnd()

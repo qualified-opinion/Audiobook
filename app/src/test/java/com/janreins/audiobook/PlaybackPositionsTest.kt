@@ -37,11 +37,11 @@ class PlaybackPositionsTest {
     }
 
     @Test fun bookmarkOneSecondBeforeTrackEndKeepsExactPosition() {
-        assertEquals(0 to 9000L, PlaybackPositions.startPoint(0, 3, 9000, 10000, savedProgress = false))
-        assertEquals(2 to 9000L, PlaybackPositions.startPoint(2, 3, 9000, 10000, savedProgress = false))
-        assertEquals(1 to 10000L, PlaybackPositions.startPoint(1, 3, 12000, 10000, savedProgress = false))
-        assertEquals(1 to 12000L, PlaybackPositions.startPoint(1, 3, 12000, 0, savedProgress = false))
-        assertEquals(1 to 0L, PlaybackPositions.startPoint(1, 3, -1, 10000, savedProgress = false))
+        // Explicit bookmark/chapter positions are only clamped, never moved by the end tolerance.
+        assertEquals(9000L, PlaybackPositions.clamp(9000, 10000))
+        assertEquals(10000L, PlaybackPositions.clamp(12000, 10000))
+        assertEquals(12000L, PlaybackPositions.clamp(12000, 0))
+        assertEquals(0L, PlaybackPositions.clamp(-1, 10000))
     }
 
     @Test fun completionKeepsEndPosition() {

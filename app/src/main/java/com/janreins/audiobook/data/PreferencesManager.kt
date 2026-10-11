@@ -1,5 +1,6 @@
 package com.janreins.audiobook.data
 
+import androidx.core.content.edit
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.SystemClock
@@ -54,6 +55,13 @@ class PreferencesManager(context: Context) : EndOfTrackStore {
 
     fun getFolderUri(): String? {
         return prefs.getString(KEY_FOLDER_URI, null)
+    }
+
+    fun setResumeUnavailable() { prefs.edit { putBoolean("resume_unavailable", true) } }
+    fun consumeResumeUnavailable(): Boolean {
+        val unavailable = prefs.getBoolean("resume_unavailable", false)
+        if (unavailable) prefs.edit { remove("resume_unavailable") }
+        return unavailable
     }
 
     // --- Last Played Book ---

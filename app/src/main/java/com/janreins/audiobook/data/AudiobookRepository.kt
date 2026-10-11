@@ -29,31 +29,33 @@ class AudiobookRepository(private val context: Context) {
      * Scans the chosen directory URI and any nested sub-folders.
      * Returns naturally sorted books grouped by their immediate containing folder.
      */
-    suspend fun loadAudiobooksFromFolder(folderUri: Uri): List<Audiobook> = withContext(Dispatchers.IO) {
-        BookGrouping.group(scanAudioFiles(folderUri))
+    data class LibraryScan(val books: List<Audiobook>, val succeeded: Boolean)
+
+    suspend fun loadAudiobooksFromFolder(folderUri: Uri): List<Audiobook> = loadLibrary(folderUri).books
+
+    suspend fun loadLibrary(folderUri: Uri): LibraryScan = withContext(Dispatchers.IO) {
+        val files = readAudioFiles(folderUri)
+        LibraryScan(BookGrouping.group(files ?: emptyList()), files != null)
     }
 
     suspend fun scanAudioFiles(folderUri: Uri): List<ScannedAudioFile> = withContext(Dispatchers.IO) {
+        readAudioFiles(folderUri) ?: emptyList()
+    }
+
+    /** null means an unreadable root; a genuinely empty folder is a successful scan. */
+    private fun readAudioFiles(folderUri: Uri): List<ScannedAudioFile>? {
         val results = mutableListOf<ScannedAudioFile>()
         val seen = mutableSetOf<String>()
-        val rootDirectory = DocumentFile.fromTreeUri(context, folderUri) ?: return@withContext emptyList()
-
-        if (!rootDirectory.exists() || !rootDirectory.isDirectory) {
-            return@withContext emptyList()
-        }
-
-        // Recursively traverse the selected folder and its sub-folders (up to 3 levels deep)
-        scanDirectoryRecursively(
-            directory = rootDirectory,
-            currentDepth = 0,
-            maxDepth = 3,
-            results = results,
-            seen = seen
-        )
+        val rootDirectory = try {
+            DocumentFile.fromTreeUri(context, folderUri)?.takeIf { it.exists() && it.isDirectory }
+        } catch (_: Exception) { null } ?: return null
+        try {
+            scanDirectoryRecursively(rootDirectory, 0, 3, results, seen)
+        } catch (_: Exception) { return null }
 
         durationCache.save(seen)
         ChapterRepository.prune(seen.mapTo(mutableSetOf()) { ChapterRepository.cacheKey(it) })
-        return@withContext results
+        return results
     }
 
     /**
@@ -68,9 +70,23 @@ class AudiobookRepository(private val context: Context) {
         seen: MutableSet<String>
     ) {
         val files = try {
-            directory.listFiles()
+            // DocumentFile.listFiles hides failed reads as empty lists. Query directly so a failed
+            // root is distinguishable from an empty folder, while unreadable sub-folders are skipped.
+            val children = DocumentsContract.buildChildDocumentsUriUsingTree(directory.uri,
+                DocumentsContract.getDocumentId(directory.uri))
+            val cursor = context.contentResolver.query(children,
+                arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null)
+                ?: throw java.io.IOException("Cannot read audiobook folder")
+            cursor.use {
+                val files = mutableListOf<DocumentFile>()
+                while (it.moveToNext()) {
+                    val uri = DocumentsContract.buildDocumentUriUsingTree(directory.uri, it.getString(0))
+                    DocumentFile.fromSingleUri(context, uri)?.let(files::add)
+                }
+                files.toTypedArray()
+            }
         } catch (e: Exception) {
-            // If listing files fails for a sub-folder, skip gracefully
+            if (currentDepth == 0) throw e
             emptyArray()
         }
 

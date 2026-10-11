@@ -159,6 +159,7 @@ class SessionPlayerTest {
         }
     }
 
+    // SessionPlayer alone has no session callback to supply a queue; its empty-player guard stays.
     @Test fun emptyPlaylistPlayDoesNothingAndDoesNotCrash() {
         val wrapped = FakePlayer(0)
         val session = SessionPlayer(wrapped, Settings().apply { finished = true }, { null })
@@ -187,11 +188,20 @@ class SessionPlayerTest {
         } finally { controller.release(); session.release(); player.release(); ShadowLooper.idleMainLooper() }
     }
 
-    @Test fun sessionControllerEmptyPlaylistResumptionDoesNotCrashOrPlay() {
+    @Test fun sessionControllerEmptyPlaylistResumesFinishedBookInOnePress() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val wrapped = FakePlayer(0)
-        val player = SessionPlayer(wrapped, Settings(), { null })
-        val session = MediaSession.Builder(context, player).build()
+        val settings = Settings().apply { finished = true }
+        val player = SessionPlayer(wrapped, settings, { null })
+        val resumption = PlaybackResumption({ resumeSnapshot() }, { com.janreins.audiobook.data.model.BookProgress(1, 10000) },
+            { settings.finished }, { true }, { true }, {}, java.util.concurrent.Executor { it.run() })
+        val session = MediaSession.Builder(context, player).setCallback(object : MediaSession.Callback {
+            override fun onPlaybackResumption(session: MediaSession, controller: MediaSession.ControllerInfo,
+                isForPlayback: Boolean) = resumption.resume(isForPlayback)
+        }).build()
+        player.addListener(object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) { if (isPlaying) settings.finished = false }
+        })
         val future = MediaController.Builder(context, session.token).buildAsync()
         ShadowLooper.idleMainLooper()
         assertTrue(future.isDone)
@@ -199,10 +209,13 @@ class SessionPlayerTest {
         try {
             controller.play()
             ShadowLooper.idleMainLooper()
-            assertFalse(wrapped.calls.contains("play:true"))
-            assertEquals(0, wrapped.mediaItemCount)
-            assertFalse(wrapped.isPlaying)
-            assertFalse(wrapped.playWhenReady)
+            assertTrue(wrapped.calls.contains("load:0:0"))
+            assertTrue(wrapped.calls.contains("play:true"))
+            assertEquals(2, wrapped.mediaItemCount)
+            assertEquals(0, wrapped.currentMediaItemIndex)
+            assertEquals(0L, wrapped.currentPosition)
+            assertTrue(wrapped.isPlaying)
+            assertFalse(settings.finished)
         } finally { controller.release(); session.release(); player.release(); ShadowLooper.idleMainLooper() }
     }
 

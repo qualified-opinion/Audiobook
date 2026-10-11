@@ -1,5 +1,6 @@
 package com.janreins.audiobook
 
+import com.janreins.audiobook.data.model.BookProgress
 import com.janreins.audiobook.player.CompletionRules
 import com.janreins.audiobook.player.PlaybackPositions
 import org.junit.Assert.assertEquals
@@ -62,4 +63,22 @@ class CompletionRulesTest {
         assertTrue(CompletionRules.isAtEnd(lastTrack, trackCount, 5_000L, 0L, finished = true))
         assertFalse(CompletionRules.isAtEnd(lastTrack, trackCount, 5_000L, 0L, finished = false))
     }
+    @Test fun coldStartTable() {
+        data class Case(val durations: List<Long>, val saved: BookProgress, val finished: Boolean,
+                        val expected: CompletionRules.ColdStart)
+        val cases = listOf(
+            Case(listOf(10000, 10000), BookProgress(1, 10000), true, CompletionRules.ColdStart(0, 0, true)),
+            Case(listOf(10000, 10000), BookProgress(1, 9500), false, CompletionRules.ColdStart(1, 8000, false)),
+            Case(listOf(10000, 10000), BookProgress(0, 9500), false, CompletionRules.ColdStart(1, 0, false)),
+            Case(listOf(10000, 10000), BookProgress(1, 4000), true, CompletionRules.ColdStart(1, 4000, false)),
+            Case(listOf(10000, 10000), BookProgress(99, 4000), false, CompletionRules.ColdStart(1, 4000, false)),
+            Case(listOf(10000, 0), BookProgress(1, 0), true, CompletionRules.ColdStart(0, 0, true)),
+            Case(listOf(0), BookProgress(0, 5000), false, CompletionRules.ColdStart(0, 5000, false)),
+            Case(listOf(1500, 10000), BookProgress(), false, CompletionRules.ColdStart(0, 0, false)),
+            Case(listOf(10000), BookProgress(-1, -10), false, CompletionRules.ColdStart(0, 0, false))
+        )
+        for (case in cases) assertEquals(case.toString(), case.expected,
+            CompletionRules.coldStart(case.durations.size, { case.durations[it] }, case.saved, case.finished))
+    }
+
 }

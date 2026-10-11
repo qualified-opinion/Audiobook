@@ -4,6 +4,10 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import androidx.core.content.ContextCompat
+import java.util.concurrent.Executors
 import android.view.KeyEvent
 import androidx.core.content.IntentCompat
 import androidx.annotation.OptIn
@@ -50,6 +54,7 @@ class PlaybackService : MediaSessionService() {
     }
     private var sessionPlayer: SessionPlayer? = null
     private var endOfTrackController: EndOfTrackController? = null
+    private val resumeExecutor = Executors.newSingleThreadExecutor()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     companion object {
@@ -91,6 +96,7 @@ class PlaybackService : MediaSessionService() {
                 session?.setMediaButtonPreferences(mediaButtons(prefs))
             }
         })
+        val resumption = PlaybackResumption.forContext(applicationContext, resumeExecutor)
         val activity = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
         )
@@ -101,6 +107,21 @@ class PlaybackService : MediaSessionService() {
             .setBitmapLoader(coverLoader)
             .setSessionActivity(activity)
             .setCallback(object : MediaSession.Callback {
+                override fun onPlaybackResumption(
+                    session: MediaSession, controller: MediaSession.ControllerInfo, isForPlayback: Boolean
+                ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+                    val future = resumption.resume(isForPlayback)
+                    if (!isForPlayback) return future
+                    return Futures.transform(future, { items ->
+                        session.player.setPlaybackSpeed(prefs.getPlaybackSpeed())
+                        // Never connect a controller synchronously inside the resumption request.
+                        Handler(Looper.getMainLooper()).post {
+                            AudiobookPlayerManager.initialize(applicationContext)
+                        }
+                        requireNotNull(items)
+                    }, ContextCompat.getMainExecutor(this@PlaybackService))
+                }
+
                 override fun onConnect(
                     session: MediaSession, controller: MediaSession.ControllerInfo
                 ): MediaSession.ConnectionResult {
@@ -218,6 +239,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         serviceScope.cancel()
+        resumeExecutor.shutdownNow()
         prefs?.unregisterChangeListener(skipLabelListener)
         endOfTrackController?.release()
         endOfTrackController = null
