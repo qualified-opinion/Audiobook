@@ -49,7 +49,9 @@ A signed release build needs signing secrets (`KEYSTORE_PATH`, `STORE_PASSWORD`,
    - Resumes saved progress when you open a book again. Within two seconds of a track's end, it advances to the next track or plays the final tail on the last track. Bookmarks keep their exact positions.
    - Completed books keep 100% progress. Pressing play at the end (in the app, notification or headset) restarts the whole book; seeking back after finishing clears Finished and continues from there.
    - Marking the loaded book finished pauses it and clears the queue and media notification, keeping the book visible in the app; one press of Play restarts it. Marking it unplayed pauses it and moves to the start.
-   - Stored 100% privately on your device using Android SharedPreferences.
+   - After an app restart, the last book appears paused immediately. Headset/Bluetooth Play can resume it after process death, using the latest saved position (saved on pause, seek, and every five seconds). Finished books restart in one press, including after marking them finished.
+   - Folder access and the starting track are checked before cold playback; unavailable books stay paused until access is restored.
+   - Stored 100% privately on your device using Android SharedPreferences and a local last-book snapshot.
 
 6. **Background Playback & Media3 Media Controls**
    - Background playback with notification and lock-screen controls for play/pause, configured skip intervals and chapter navigation (or -1m/+1m when there is only one chapter; button visibility depends on Android/device).

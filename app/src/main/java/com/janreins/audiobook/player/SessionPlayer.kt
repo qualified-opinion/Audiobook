@@ -79,7 +79,7 @@ class SessionPlayer(
 
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
         if (playWhenReady) {
-            // Empty queues use MediaSession's default (unsupported) playback resumption.
+            // MediaSession supplies an empty queue through its resumption callback before calling play.
             val item = player.currentMediaItem ?: return Futures.immediateVoidFuture()
             val finished = settings.isFinished(item.mediaId.substringBeforeLast("#"))
             val atEnd = CompletionRules.isAtEnd(player.currentMediaItemIndex, player.mediaItemCount,

@@ -16,12 +16,6 @@ object PlaybackPositions {
         return index to clamp(savedMs, trackDurationMs)
     }
 
-    /** Explicit bookmark/chapter positions are exact; only saved progress uses the end tolerance. */
-    fun startPoint(trackIndex: Int, trackCount: Int, positionMs: Long, trackDurationMs: Long,
-                   savedProgress: Boolean): Pair<Int, Long> =
-        if (savedProgress) resumePoint(trackIndex, trackCount, positionMs, trackDurationMs)
-        else trackIndex to clamp(positionMs, trackDurationMs)
-
     fun positionAfterCompletion(durationMs: Long): Long = durationMs.coerceAtLeast(0L)
 
     class SaveThrottle(private val intervalMs: Long = 5000) {

@@ -1,14 +1,15 @@
 package com.janreins.audiobook.player
 
+import androidx.core.net.toUri
 import android.content.ComponentName
 import android.content.Context
 import android.os.SystemClock
 import android.os.Bundle
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.core.content.ContextCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
-import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
@@ -18,8 +19,11 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.janreins.audiobook.data.ChapterRepository
 import com.janreins.audiobook.data.LibraryStateStore
+import com.janreins.audiobook.data.FolderAccess
+import com.janreins.audiobook.data.ResumeSnapshotStore
+import com.janreins.audiobook.data.toBook
+import com.janreins.audiobook.data.toResumeSnapshot
 import com.janreins.audiobook.data.PreferencesManager
-import com.janreins.audiobook.data.model.AudioTrack
 import com.janreins.audiobook.data.model.BookProgress
 import com.janreins.audiobook.data.model.Audiobook
 import com.janreins.audiobook.data.model.SleepTimerOption
@@ -188,8 +192,68 @@ object AudiobookPlayerManager {
             prefsManager = PreferencesManager(requireNotNull(appContext))
             libraryStateStore = LibraryStateStore(requireNotNull(appContext))
             _playbackSpeed.value = SpeedSteps.snap(prefsManager?.getPlaybackSpeed() ?: 1f)
+            restoreLastBook()
         }
         connect()
+    }
+
+    /** Once per process from initialize; UI only, with no playlist or player commands. */
+    fun restoreLastBook() {
+        if (_currentBook.value != null) return
+        val application = appContext ?: return
+        val snapshot = ResumeSnapshotStore(application).read() ?: return
+        if (!FolderAccess.hasPersistedReadAccess(application.contentResolver, snapshot.folderUri.toUri())) return
+        val book = snapshot.toBook()
+        knownBooks[book.id] = book
+        _currentBook.value = book
+        val saved = prefsManager?.getBookProgress(book.id) ?: BookProgress()
+        _currentTrackIndex.value = saved.trackIndex.coerceIn(0, book.trackCount - 1)
+        _currentPositionMs.value = saved.positionMs.coerceAtLeast(0L)
+        _trackCount.value = book.trackCount
+        _durationMs.value = trackDuration(book, _currentTrackIndex.value, null)
+        ChapterRepository.ensureLoaded(book)
+        _chapters.value = ChapterRepository.indexes.value[book.id]
+        _currentChapter.value = _chapters.value?.indexAt(_currentTrackIndex.value, _currentPositionMs.value) ?: 0
+    }
+
+    /** A successful scan refreshes the snapshot; an unreadable root keeps it for a later retry. */
+    fun reconcileLibrary(books: List<Audiobook>, scanSucceeded: Boolean) {
+        if (!scanSucceeded) return
+        val application = appContext ?: return
+        val store = ResumeSnapshotStore(application)
+        val snapshot = store.read() ?: return
+        val fresh = books.find { it.id == snapshot.bookId }
+        if (fresh != null) {
+            val refreshed = fresh.toResumeSnapshot(snapshot.folderUri)
+            if (refreshed != snapshot) saveSnapshot(fresh, snapshot.folderUri)
+            knownBooks[fresh.id] = fresh
+            if (_currentBook.value?.id == fresh.id) {
+                _currentBook.value = fresh
+                _currentTrackIndex.value = _currentTrackIndex.value.coerceIn(0, fresh.trackCount - 1)
+                _trackCount.value = fresh.trackCount
+                _durationMs.value = trackDuration(fresh, _currentTrackIndex.value, controller)
+                ChapterRepository.ensureLoaded(fresh)
+            }
+        } else {
+            store.clear()
+            if (_currentBook.value?.id == snapshot.bookId && controller?.currentMediaItem == null) {
+                _currentBook.value = null
+                _chapters.value = null
+                _currentChapter.value = 0
+                _currentTrackIndex.value = 0
+                _currentPositionMs.value = 0L
+                _durationMs.value = 0L
+                _trackCount.value = 1
+                knownBooks.remove(snapshot.bookId)
+            }
+        }
+    }
+
+    private fun saveSnapshot(book: Audiobook, folderUri: String?) {
+        val application = appContext ?: return
+        if (folderUri.isNullOrBlank()) return
+        try { ResumeSnapshotStore(application).write(book.toResumeSnapshot(folderUri)) }
+        catch (e: java.io.IOException) { Log.w("AudiobookPlayerManager", "Could not save resume snapshot", e) }
     }
 
     private fun connect() {
@@ -228,9 +292,10 @@ object AudiobookPlayerManager {
                     pendingActions.clear()
                     actions.forEach { runAction(connected, it) }
                     if (controller === connected) {
+                        // A cold resume may have loaded/started before this controller connected.
+                        knownBooks[bookId(connected.currentMediaItem)]?.let { _currentBook.value = it }
                         updatePosition(connected)
-                        _isPlaying.value = connected.isPlaying
-                        if (connected.isPlaying) startPositionTracker()
+                        if (connected.currentMediaItem != null) listener.onIsPlayingChanged(connected.isPlaying)
                     }
                 } catch (_: Exception) {
                     controllerFuture = null
@@ -263,28 +328,24 @@ object AudiobookPlayerManager {
         knownBooks[book.id] = book
         _errorMessage.value = null
         withController { player ->
-            val tracks = book.tracks.ifEmpty {
-                listOf(AudioTrack(book.uri, book.id, book.fileName, book.title, book.durationMs, book.sizeBytes))
-            }
+            val tracks = BookMediaItems.tracks(book)
             val sameBook = bookId(player.currentMediaItem) == book.id
             val saved = prefsManager?.getBookProgress(book.id) ?: BookProgress()
             val finishedFlag = libraryStateStore?.isFinished(book.id) == true
-            val atEnd = if (sameBook) {
+            val explicit = customStartPosMs != null || customTrackIndex != null
+            val cold = if (!sameBook) CompletionRules.coldStart(tracks.size,
+                { trackDuration(book, it, null) }, saved, finishedFlag) else null
+            val restartFinished = !explicit && (cold?.restart ?: CompletionRules.restartOnPlay(
+                player.playbackState == Player.STATE_ENDED, finishedFlag,
                 CompletionRules.isAtEnd(player.currentMediaItemIndex, tracks.size, player.currentPosition,
-                    trackDuration(book, player.currentMediaItemIndex, player), finishedFlag)
-            } else {
-                CompletionRules.isAtEnd(saved.trackIndex, tracks.size, saved.positionMs,
-                    trackDuration(book, saved.trackIndex, null), finishedFlag)
-            }
-            val restartFinished = customStartPosMs == null && customTrackIndex == null &&
-                CompletionRules.restartOnPlay(sameBook && player.playbackState == Player.STATE_ENDED, finishedFlag, atEnd)
+                    trackDuration(book, player.currentMediaItemIndex, player), finishedFlag)))
             val requestedIndex = (customTrackIndex ?: if (restartFinished) 0
-                else if (sameBook) player.currentMediaItemIndex else saved.trackIndex).coerceIn(tracks.indices)
+                else if (sameBook) player.currentMediaItemIndex else if (explicit) saved.trackIndex else requireNotNull(cold).index).coerceIn(tracks.indices)
             val position = customStartPosMs ?: if (restartFinished || customTrackIndex != null) 0L
-                else if (sameBook) player.currentPosition else saved.positionMs
-            val (index, start) = PlaybackPositions.startPoint(requestedIndex, tracks.size, position,
-                trackDuration(book, requestedIndex, if (sameBook) player else null),
-                savedProgress = !sameBook && !restartFinished && customStartPosMs == null && customTrackIndex == null)
+                else if (sameBook) player.currentPosition
+                else if (explicit) saved.positionMs else requireNotNull(cold).positionMs
+            val index = requestedIndex
+            val start = PlaybackPositions.clamp(position, trackDuration(book, index, if (sameBook) player else null))
             // Explicit positions mean listening again, even within the end tolerance. Clear Finished
             // before session play so its restart rule cannot override a bookmark or chapter seek.
             if (restartFinished || customStartPosMs != null || customTrackIndex != null) {
@@ -316,18 +377,8 @@ object AudiobookPlayerManager {
                 _durationMs.value = tracks[index].durationMs
                 _currentPositionMs.value = start
                 prefsManager?.saveLastPlayedBookId(book.id)
-                val items = tracks.mapIndexed { trackIndex, track ->
-                    MediaItem.Builder().setUri(track.uri).setMediaId("${book.id}#$trackIndex")
-                        .setMediaMetadata(MediaMetadata.Builder().setTitle(track.title)
-                            .setArtist("Audiobook").setAlbumTitle(book.title)
-                            // The folder cover goes in extras, not artworkUri: MediaSession always wraps the
-                            // loader in CacheBitmapLoader, which matches on URI *or* data and would keep the
-                            // folder bitmap after the embedded art (artworkData) arrives.
-                            .setExtras(Bundle().apply {
-                                putString(CoverBitmapLoader.EXTRA_BOOK_ID, book.id)
-                                book.coverUri?.let { putString(CoverBitmapLoader.EXTRA_FOLDER_COVER_URI, it.toString()) }
-                            }).build()).build()
-                }
+                saveSnapshot(book, prefsManager?.getFolderUri())
+                val items = BookMediaItems.forBook(book)
                 player.setMediaItems(items, index, start)
                 player.prepare()
                 player.setPlaybackSpeed(_playbackSpeed.value)
@@ -407,7 +458,6 @@ object AudiobookPlayerManager {
     }
 
     fun skip(deltaMs: Long) = withController { player ->
-        if (player.currentMediaItem == null) return@withController
         seek(player, SeekMath.clampSeek(player.currentPosition, deltaMs, player.duration))
     }
 

@@ -4,6 +4,17 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
+import android.content.pm.ServiceInfo
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
+import androidx.core.app.NotificationChannelCompat
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.app.ServiceCompat
+import com.google.common.util.concurrent.FutureCallback
+import androidx.core.content.ContextCompat
+import java.util.concurrent.Executors
 import android.view.KeyEvent
 import androidx.core.content.IntentCompat
 import androidx.annotation.OptIn
@@ -50,12 +61,16 @@ class PlaybackService : MediaSessionService() {
     }
     private var sessionPlayer: SessionPlayer? = null
     private var endOfTrackController: EndOfTrackController? = null
+    private val resumeExecutor = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     companion object {
         val REWIND_60 = SessionCommand("com.janreins.audiobook.REWIND_60", Bundle.EMPTY)
         val END_OF_TRACK = SessionCommand("com.janreins.audiobook.END_OF_TRACK", Bundle.EMPTY)
         val FORWARD_60 = SessionCommand("com.janreins.audiobook.FORWARD_60", Bundle.EMPTY)
+        /** Separate from Media3's playback notification (DEFAULT_NOTIFICATION_ID 1001). */
+        const val RESUME_UNAVAILABLE_NOTIFICATION_ID = 2001
     }
 
     override fun onCreate() {
@@ -91,6 +106,7 @@ class PlaybackService : MediaSessionService() {
                 session?.setMediaButtonPreferences(mediaButtons(prefs))
             }
         })
+        val resumption = PlaybackResumption.forContext(applicationContext, resumeExecutor)
         val activity = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
         )
@@ -101,6 +117,30 @@ class PlaybackService : MediaSessionService() {
             .setBitmapLoader(coverLoader)
             .setSessionActivity(activity)
             .setCallback(object : MediaSession.Callback {
+                override fun onPlaybackResumption(
+                    session: MediaSession, controller: MediaSession.ControllerInfo, isForPlayback: Boolean
+                ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+                    val future = try { resumption.resume(isForPlayback) }
+                        catch (e: Exception) { Futures.immediateFailedFuture(e) }
+                    if (!isForPlayback) return future
+                    val mainExecutor = ContextCompat.getMainExecutor(this@PlaybackService)
+                    val result = Futures.transform(future, { items ->
+                        session.player.setPlaybackSpeed(prefs.getPlaybackSpeed())
+                        // Never connect a controller synchronously inside the resumption request.
+                        mainHandler.post { AudiobookPlayerManager.initialize(applicationContext) }
+                        requireNotNull(items)
+                    }, mainExecutor)
+                    // A cold media-button press may have started this service with startForegroundService.
+                    // Media3 posts nothing for a failed resumption, so satisfy and end the FGS here.
+                    Futures.addCallback(result, object : FutureCallback<MediaSession.MediaItemsWithStartPosition> {
+                        override fun onSuccess(items: MediaSession.MediaItemsWithStartPosition) = Unit
+                        override fun onFailure(t: Throwable) {
+                            if (session.player.mediaItemCount == 0) showUnavailableAndStop()
+                        }
+                    }, mainExecutor)
+                    return result
+                }
+
                 override fun onConnect(
                     session: MediaSession, controller: MediaSession.ControllerInfo
                 ): MediaSession.ConnectionResult {
@@ -182,6 +222,33 @@ class PlaybackService : MediaSessionService() {
 
     private var chapterTicker: Job? = null
 
+    /** Briefly enters the foreground with a "Last book unavailable" notice, then removes it and stops. */
+    private fun showUnavailableAndStop() {
+        try {
+            NotificationManagerCompat.from(this).createNotificationChannel(
+                NotificationChannelCompat.Builder(DefaultMediaNotificationProvider.DEFAULT_CHANNEL_ID,
+                    NotificationManagerCompat.IMPORTANCE_LOW)
+                    .setName(getString(DefaultMediaNotificationProvider.DEFAULT_CHANNEL_NAME_RESOURCE_ID))
+                    .build())
+            val notification = NotificationCompat.Builder(this, DefaultMediaNotificationProvider.DEFAULT_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_stat_audiobook)
+                .setContentTitle("Last book unavailable")
+                .setContentText("Open the app to choose a book.")
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setSilent(true)
+                .build()
+            ServiceCompat.startForeground(this, RESUME_UNAVAILABLE_NOTIFICATION_ID, notification,
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q)
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0)
+        } catch (e: Exception) {
+            // Not started for the foreground (e.g. a warm in-app controller): nothing to satisfy.
+            Log.w("PlaybackService", "Could not post resume-unavailable notification", e)
+        } finally {
+            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
+    }
+
     private fun currentChapterIndex(): ChapterIndex? = session?.player?.currentMediaItem?.mediaId
         ?.substringBeforeLast("#")?.let { ChapterRepository.indexes.value[it] }
 
@@ -218,6 +285,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         serviceScope.cancel()
+        resumeExecutor.shutdownNow()
         prefs?.unregisterChangeListener(skipLabelListener)
         endOfTrackController?.release()
         endOfTrackController = null

@@ -11,7 +11,6 @@ import com.janreins.audiobook.data.PreferencesManager
 import com.janreins.audiobook.data.model.BookProgress
 import com.janreins.audiobook.data.model.Bookmark
 import com.janreins.audiobook.data.model.ScannedAudioFile
-import com.janreins.audiobook.player.PlaybackPositions
 import com.janreins.audiobook.player.CompletionRules
 import org.junit.Assert.*
 import org.junit.Before
@@ -74,8 +73,8 @@ class UpgradeCompatibilityTest {
         val finished = LibraryStateStore(context).isFinished(bookId)
         assertFalse(CompletionRules.restartOnPlay(false, finished,
             CompletionRules.isAtEnd(progress.trackIndex, 3, progress.positionMs, 100000L, finished)))
-        assertEquals(2 to 0L, PlaybackPositions.startPoint(progress.trackIndex, 3, progress.positionMs,
-            100000L, savedProgress = true))
+        assertEquals(CompletionRules.ColdStart(2, 0L, false),
+            CompletionRules.coldStart(3, { 100000L }, progress, finished))
     }
 
     @Test fun groupingKeepsProgressIdsForTheSameFilesWithOrWithoutCovers() {
