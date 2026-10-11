@@ -5,21 +5,37 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PlaybackPositionsTest {
-    @Test fun resumePositions() {
-        assertEquals(3000L, PlaybackPositions.resumePosition(3000, 10000))
-        assertEquals(0L, PlaybackPositions.resumePosition(-1, 10000))
-        assertEquals(0L, PlaybackPositions.resumePosition(8000, 10000))
-        assertEquals(0L, PlaybackPositions.resumePosition(10000, 10000))
-        assertEquals(0L, PlaybackPositions.resumePosition(12000, 10000))
-        assertEquals(3000L, PlaybackPositions.resumePosition(3000, 0))
-        assertEquals(3000L, PlaybackPositions.resumePosition(3000, -1))
-        assertEquals(0L, PlaybackPositions.resumePosition(-1, 0))
+    @Test fun savedProgressAdvancesFromNonLastTrackEnd() {
+        for (position in listOf(8000L, 9000L, 10000L, 12000L)) {
+            assertEquals(1 to 0L, PlaybackPositions.resumePoint(0, 3, position, 10000))
+        }
     }
 
-    @Test fun completionKeepsEndPositionAndReplayResumesAtZero() {
-        val end = PlaybackPositions.positionAfterCompletion(10000L)
-        assertEquals(10000L, end)
-        assertEquals(0L, PlaybackPositions.resumePosition(end, 10000L))
+    @Test fun unfinishedLastTrackPlaysTheTailIncludingSingleTrackBooks() {
+        assertEquals(2 to 8000L, PlaybackPositions.resumePoint(2, 3, 9000, 10000))
+        assertEquals(0 to 8000L, PlaybackPositions.resumePoint(0, 1, 10000, 10000))
+        assertEquals(0 to 0L, PlaybackPositions.resumePoint(0, 1, 500, 1000))
+    }
+
+    @Test fun ordinaryAndUnknownDurationProgressIsClamped() {
+        assertEquals(1 to 3000L, PlaybackPositions.resumePoint(1, 3, 3000, 10000))
+        assertEquals(0 to 0L, PlaybackPositions.resumePoint(0, 3, -1, 10000))
+        assertEquals(0 to 0L, PlaybackPositions.resumePoint(0, 3, -1, 1000))
+        assertEquals(1 to 3000L, PlaybackPositions.resumePoint(1, 3, 3000, 0))
+        assertEquals(1 to 3000L, PlaybackPositions.resumePoint(1, 3, 3000, -1))
+        assertEquals(1 to 0L, PlaybackPositions.resumePoint(1, 3, -1, 0))
+    }
+
+    @Test fun bookmarkOneSecondBeforeTrackEndKeepsExactPosition() {
+        assertEquals(0 to 9000L, PlaybackPositions.startPoint(0, 3, 9000, 10000, savedProgress = false))
+        assertEquals(2 to 9000L, PlaybackPositions.startPoint(2, 3, 9000, 10000, savedProgress = false))
+        assertEquals(1 to 10000L, PlaybackPositions.startPoint(1, 3, 12000, 10000, savedProgress = false))
+        assertEquals(1 to 12000L, PlaybackPositions.startPoint(1, 3, 12000, 0, savedProgress = false))
+        assertEquals(1 to 0L, PlaybackPositions.startPoint(1, 3, -1, 10000, savedProgress = false))
+    }
+
+    @Test fun completionKeepsEndPosition() {
+        assertEquals(10000L, PlaybackPositions.positionAfterCompletion(10000L))
         assertEquals(0L, PlaybackPositions.positionAfterCompletion(-1L))
     }
 

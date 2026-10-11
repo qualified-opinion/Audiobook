@@ -26,14 +26,26 @@ class CompletionRulesTest {
         assertFalse(finished)
 
         // Play: not ended and not at the end, so playback continues from the seek target.
-        assertFalse(CompletionRules.shouldRestart(ended = false, atEnd = atEnd))
-        assertEquals(seekTarget, PlaybackPositions.resumePosition(seekTarget, lastTrackDuration))
+        assertFalse(CompletionRules.restartOnPlay(ended = false, finished = finished, atEnd = atEnd))
+        assertEquals(seekTarget, PlaybackPositions.resumePoint(lastTrack, trackCount, seekTarget, lastTrackDuration).second)
     }
 
     @Test fun playAfterTheEndRestartsTheBook() {
-        assertTrue(CompletionRules.shouldRestart(ended = true, atEnd = false))
+        assertTrue(CompletionRules.restartOnPlay(ended = true, finished = true, atEnd = false))
         val atEnd = CompletionRules.isAtEnd(lastTrack, trackCount, lastTrackDuration - 500L, lastTrackDuration, true)
-        assertTrue(CompletionRules.shouldRestart(ended = false, atEnd = atEnd))
+        assertTrue(CompletionRules.restartOnPlay(ended = false, finished = true, atEnd = atEnd))
+    }
+
+    @Test fun restartOnPlayTruthTable() {
+        for (ended in listOf(false, true)) for (finished in listOf(false, true)) for (atEnd in listOf(false, true)) {
+            assertEquals(ended || (finished && atEnd), CompletionRules.restartOnPlay(ended, finished, atEnd))
+        }
+    }
+
+    @Test fun unfinishedBookNearEndContinues() {
+        val atEnd = CompletionRules.isAtEnd(lastTrack, trackCount, lastTrackDuration - 1000, lastTrackDuration, false)
+        assertTrue(atEnd)
+        assertFalse(CompletionRules.restartOnPlay(false, false, atEnd))
     }
 
     @Test fun seekWithinTheEndKeepsFinished() {

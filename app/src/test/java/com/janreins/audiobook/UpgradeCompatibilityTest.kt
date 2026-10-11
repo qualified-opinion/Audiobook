@@ -11,6 +11,8 @@ import com.janreins.audiobook.data.PreferencesManager
 import com.janreins.audiobook.data.model.BookProgress
 import com.janreins.audiobook.data.model.Bookmark
 import com.janreins.audiobook.data.model.ScannedAudioFile
+import com.janreins.audiobook.player.PlaybackPositions
+import com.janreins.audiobook.player.CompletionRules
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -63,6 +65,17 @@ class UpgradeCompatibilityTest {
             Bookmark("bm1", bookId, 12000, "Note", 987654321, 1)
         ), preferences.getBookmarks(bookId))
         assertEquals(before, raw.all)
+    }
+
+    @Test fun existingSavedTrackEndAdvancesWithoutRestartingBook() {
+        val raw = context.getSharedPreferences("audiobook_player_preferences", Context.MODE_PRIVATE)
+        raw.edit().putInt("track_$bookId", 1).putLong("pos_$bookId", 99000L).commit()
+        val progress = PreferencesManager(context).getBookProgress(bookId)
+        val finished = LibraryStateStore(context).isFinished(bookId)
+        assertFalse(CompletionRules.restartOnPlay(false, finished,
+            CompletionRules.isAtEnd(progress.trackIndex, 3, progress.positionMs, 100000L, finished)))
+        assertEquals(2 to 0L, PlaybackPositions.startPoint(progress.trackIndex, 3, progress.positionMs,
+            100000L, savedProgress = true))
     }
 
     @Test fun groupingKeepsProgressIdsForTheSameFilesWithOrWithoutCovers() {

@@ -13,6 +13,7 @@ interface SessionSettings {
     fun skipBackMs(): Long
     fun skipForwardMs(): Long
     fun smartRewindEnabled(): Boolean
+    fun isFinished(bookId: String): Boolean
 }
 
 @OptIn(UnstableApi::class)
@@ -77,7 +78,17 @@ class SessionPlayer(
     }
 
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
-        if (playWhenReady) applySmartRewind()
+        if (playWhenReady) {
+            // Empty queues use MediaSession's default (unsupported) playback resumption.
+            val item = player.currentMediaItem ?: return Futures.immediateVoidFuture()
+            val finished = settings.isFinished(item.mediaId.substringBeforeLast("#"))
+            val atEnd = CompletionRules.isAtEnd(player.currentMediaItemIndex, player.mediaItemCount,
+                player.currentPosition, player.duration, finished)
+            if (CompletionRules.restartOnPlay(player.playbackState == Player.STATE_ENDED, finished, atEnd)) {
+                player.seekTo(0, 0L)
+                clearPause()
+            } else applySmartRewind()
+        }
         player.playWhenReady = playWhenReady
         return Futures.immediateVoidFuture()
     }

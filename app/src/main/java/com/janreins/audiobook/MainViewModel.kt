@@ -73,12 +73,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun markFinished(book: Audiobook) {
-        val lastIndex = book.trackCount - 1
-        val duration = book.tracks.getOrNull(lastIndex)?.durationMs ?: book.durationMs
-        val progress = BookProgress(lastIndex, duration.coerceAtLeast(0L))
+        val progress = AudiobookPlayerManager.finishedProgress(book)
         prefs.saveBookProgress(book.id, progress)
-        AudiobookPlayerManager.applyStoredProgress(book.id, progress)
         libraryState.setFinished(book.id, true)
+        AudiobookPlayerManager.applyFinished(book.id, progress)
     }
 
     /** Resets progress to the start; a loaded book is paused and moved to the start too. Bookmarks stay. */

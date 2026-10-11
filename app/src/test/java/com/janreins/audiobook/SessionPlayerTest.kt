@@ -1,6 +1,10 @@
 package com.janreins.audiobook
 
+import android.content.Context
 import android.os.Looper
+import androidx.test.core.app.ApplicationProvider
+import androidx.media3.session.MediaController
+import androidx.media3.session.MediaSession
 import androidx.annotation.OptIn
 import androidx.media3.common.*
 import androidx.media3.common.util.UnstableApi
@@ -20,6 +24,8 @@ import org.robolectric.shadows.ShadowLooper
 @Config(sdk = [34])
 class SessionPlayerTest {
     private class Settings : SessionSettings {
+        var finished = false
+        override fun isFinished(bookId: String) = finished && bookId == "book"
         var enabled = true
         var back = 15000L
         var forward = 30000L
@@ -28,7 +34,7 @@ class SessionPlayerTest {
         override fun smartRewindEnabled() = enabled
     }
 
-    private class FakePlayer(count: Int = 3) : SimpleBasePlayer(Looper.getMainLooper()) {
+    internal class FakePlayer(count: Int = 3) : SimpleBasePlayer(Looper.getMainLooper()) {
         val calls = mutableListOf<String>()
         var snapshot = State.Builder().setAvailableCommands(Player.Commands.Builder().addAllCommands().apply {
                 if (count == 1) { remove(Player.COMMAND_SEEK_TO_NEXT); remove(Player.COMMAND_SEEK_TO_PREVIOUS) }
@@ -36,19 +42,59 @@ class SessionPlayerTest {
             .setPlaylist((0 until count).map { i -> MediaItemData.Builder(i)
                 .setMediaItem(MediaItem.Builder().setMediaId("book#$i").build())
                 .setIsSeekable(true).setDurationUs(100_000_000).build() })
-            .setCurrentMediaItemIndex(0).setContentPositionMs(0).setPlaybackState(Player.STATE_READY).build()
+            .setCurrentMediaItemIndex(0).setContentPositionMs(0).setPlaybackState(if (count == 0) Player.STATE_IDLE else Player.STATE_READY).build()
         override fun getState() = snapshot
         fun change(index: Int = snapshot.currentMediaItemIndex, position: Long = currentPosition,
-                   ready: Boolean = snapshot.playWhenReady, playback: Int = snapshot.playbackState) {
+                   ready: Boolean = snapshot.playWhenReady, playback: Int = snapshot.playbackState,
+                   reason: Int = Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST) {
             snapshot = snapshot.buildUpon().setCurrentMediaItemIndex(index).setContentPositionMs(position)
-                .setPlayWhenReady(ready, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST).setPlaybackState(playback).build()
+                .setPlayWhenReady(ready, reason).setPlaybackState(playback).build()
             invalidateState()
             ShadowLooper.idleMainLooper()
+        }
+        fun load(bookId: String = "book", count: Int = 3, index: Int = 0) {
+            snapshot = snapshot.buildUpon().setPlaylist((0 until count).map { i -> MediaItemData.Builder("$bookId#$i")
+                .setMediaItem(MediaItem.Builder().setMediaId("$bookId#$i").build())
+                .setIsSeekable(true).setDurationUs(100_000_000).build() })
+                .setCurrentMediaItemIndex(index).setContentPositionMs(0)
+                .setPlaybackState(if (count == 0) Player.STATE_IDLE else Player.STATE_READY).build()
+            invalidateState()
+            ShadowLooper.idleMainLooper()
+        }
+        override fun handleRelease(): ListenableFuture<*> = Futures.immediateVoidFuture()
+        override fun handleStop(): ListenableFuture<*> {
+            calls += "stop"
+            snapshot = snapshot.buildUpon().setPlaybackState(Player.STATE_IDLE).build()
+            return Futures.immediateVoidFuture()
+        }
+        override fun handleRemoveMediaItems(fromIndex: Int, toIndex: Int): ListenableFuture<*> {
+            calls += "clear"
+            snapshot = snapshot.buildUpon().setPlaylist(emptyList()).setCurrentMediaItemIndex(0)
+                .setContentPositionMs(0).setPlaybackState(Player.STATE_IDLE).build()
+            return Futures.immediateVoidFuture()
+        }
+        override fun handleSetMediaItems(mediaItems: List<MediaItem>, startIndex: Int, startPositionMs: Long): ListenableFuture<*> {
+            calls += "load:$startIndex:$startPositionMs"
+            snapshot = snapshot.buildUpon().setPlaylist(mediaItems.map { MediaItemData.Builder(it.mediaId)
+                .setMediaItem(it).setIsSeekable(true).setDurationUs(100_000_000).build() })
+                .setCurrentMediaItemIndex(startIndex).setContentPositionMs(startPositionMs)
+                .setPlaybackState(Player.STATE_IDLE).build()
+            return Futures.immediateVoidFuture()
+        }
+        override fun handlePrepare(): ListenableFuture<*> {
+            calls += "prepare"
+            snapshot = snapshot.buildUpon().setPlaybackState(if (snapshot.playlist.isEmpty()) Player.STATE_IDLE else Player.STATE_READY).build()
+            return Futures.immediateVoidFuture()
+        }
+        override fun handleSetPlaybackParameters(playbackParameters: PlaybackParameters): ListenableFuture<*> {
+            snapshot = snapshot.buildUpon().setPlaybackParameters(playbackParameters).build()
+            return Futures.immediateVoidFuture()
         }
         override fun handleSeek(mediaItemIndex: Int, positionMs: Long, seekCommand: Int): ListenableFuture<*> {
             calls += "seek:$mediaItemIndex:$positionMs"
             snapshot = snapshot.buildUpon().setCurrentMediaItemIndex(mediaItemIndex).setContentPositionMs(positionMs)
-                .setPositionDiscontinuity(Player.DISCONTINUITY_REASON_SEEK, positionMs).build()
+                .setPositionDiscontinuity(Player.DISCONTINUITY_REASON_SEEK, positionMs)
+                .setPlaybackState(if (snapshot.playbackState == Player.STATE_ENDED) Player.STATE_READY else snapshot.playbackState).build()
             return Futures.immediateVoidFuture()
         }
         override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
@@ -66,6 +112,98 @@ class SessionPlayerTest {
         Util.handlePlayButtonAction(session)
         ShadowLooper.idleMainLooper()
         assertEquals(listOf("seek:0:0", "play:true"), wrapped.calls)
+    }
+
+    @Test fun notificationPlayFromPausedFinishedEndRestartsInOnePress() {
+        assertFinishedPlayRestarts()
+    }
+
+    @Test fun headsetPlayFromPausedFinishedEndRestartsInOnePress() {
+        // Media3 handles KEYCODE_MEDIA_PLAY_PAUSE / PLAY with these helpers on the session player.
+        // (Robolectric does not route platform media-button dispatch, so the key event itself is device-only.)
+        for (press in listOf<(Player) -> Unit>({ Util.handlePlayPauseButtonAction(it) }, { Util.handlePlayButtonAction(it) })) {
+            val wrapped = FakePlayer()
+            wrapped.change(index = 2, position = 99000)
+            val session = SessionPlayer(wrapped, Settings().apply { finished = true }, { null })
+            press(session)
+            ShadowLooper.idleMainLooper()
+            assertEquals(listOf("seek:0:0", "play:true"), wrapped.calls)
+        }
+    }
+
+    private fun assertFinishedPlayRestarts() {
+        val wrapped = FakePlayer()
+        var clock = 0L
+        val session = SessionPlayer(wrapped, Settings().apply { finished = true }, { null }, { clock })
+        wrapped.change(index = 2, position = 99000, ready = true)
+        session.pause()
+        ShadowLooper.idleMainLooper()
+        clock = 600_000L
+        wrapped.calls.clear()
+        session.play()
+        ShadowLooper.idleMainLooper()
+        assertEquals(listOf("seek:0:0", "play:true"), wrapped.calls)
+        assertEquals(0, session.currentMediaItemIndex)
+        assertEquals(0L, session.currentPosition)
+        assertTrue(session.playWhenReady)
+    }
+
+    @Test fun unfinishedEndAndFinishedEarlierTrackDoNotRestart() {
+        for ((finished, track) in listOf(false to 2, true to 1)) {
+            val wrapped = FakePlayer()
+            wrapped.change(index = track, position = 99000)
+            val session = SessionPlayer(wrapped, Settings().apply { this.finished = finished }, { null })
+            session.play()
+            ShadowLooper.idleMainLooper()
+            assertEquals(listOf("play:true"), wrapped.calls)
+        }
+    }
+
+    @Test fun emptyPlaylistPlayDoesNothingAndDoesNotCrash() {
+        val wrapped = FakePlayer(0)
+        val session = SessionPlayer(wrapped, Settings().apply { finished = true }, { null })
+        session.play()
+        ShadowLooper.idleMainLooper()
+        assertTrue(wrapped.calls.isEmpty())
+        assertFalse(wrapped.playWhenReady)
+        assertFalse(session.isPlaying)
+        assertEquals(0, session.mediaItemCount)
+    }
+
+    @Test fun notificationControllerPlayRestartsFinishedEndInOnePress() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val wrapped = FakePlayer()
+        wrapped.change(index = 2, position = 99000)
+        val player = SessionPlayer(wrapped, Settings().apply { finished = true }, { null })
+        val session = MediaSession.Builder(context, player).build()
+        val future = MediaController.Builder(context, session.token).buildAsync()
+        ShadowLooper.idleMainLooper()
+        assertTrue(future.isDone)
+        val controller = future.get()
+        try {
+            controller.play()
+            ShadowLooper.idleMainLooper()
+            assertEquals(listOf("seek:0:0", "play:true"), wrapped.calls)
+        } finally { controller.release(); session.release(); player.release(); ShadowLooper.idleMainLooper() }
+    }
+
+    @Test fun sessionControllerEmptyPlaylistResumptionDoesNotCrashOrPlay() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val wrapped = FakePlayer(0)
+        val player = SessionPlayer(wrapped, Settings(), { null })
+        val session = MediaSession.Builder(context, player).build()
+        val future = MediaController.Builder(context, session.token).buildAsync()
+        ShadowLooper.idleMainLooper()
+        assertTrue(future.isDone)
+        val controller = future.get()
+        try {
+            controller.play()
+            ShadowLooper.idleMainLooper()
+            assertFalse(wrapped.calls.contains("play:true"))
+            assertEquals(0, wrapped.mediaItemCount)
+            assertFalse(wrapped.isPlaying)
+            assertFalse(wrapped.playWhenReady)
+        } finally { controller.release(); session.release(); player.release(); ShadowLooper.idleMainLooper() }
     }
 
     @Test fun defaultPositionBeforeTheEndIsUnchanged() {
