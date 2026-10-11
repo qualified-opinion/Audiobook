@@ -1,9 +1,11 @@
 name: Android CI
 
+# Tests, lint and the debug APK only. Release-signed APKs come from release.yml, which attaches
+# them to published releases; this workflow no longer publishes anything on v* tags.
+
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -39,19 +41,3 @@ jobs:
         with:
           name: reports
           path: app/build/reports/**
-
-  release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          name: app-debug-apk
-          path: apk
-      - uses: softprops/action-gh-release@v3
-        with:
-          files: apk/*.apk
-          generate_release_notes: true

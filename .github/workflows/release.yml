@@ -1,0 +1,136 @@
+name: Release APK
+
+# Builds the release-signed APK.
+#   - Release published: attaches it to that release as audiobook-<version>.apk.
+#   - Run by hand (Actions > Release APK > Run workflow):
+#       * with a tag: attaches it to that existing release, as above
+#       * without a tag: uploads it as an Actions artifact only; no release is touched
+#
+# Signing uses the repository secrets RELEASE_KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS and
+# KEY_PASSWORD. If any is missing the workflow fails; it never falls back to the debug key or
+# an unsigned APK.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to attach the APK to (e.g. v1.2.0). Leave empty to only upload an Actions artifact.
+        required: false
+        default: ''
+      ref:
+        description: Branch, tag or commit to build
+        required: true
+        default: main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref }}
+
+      - name: Work out version
+        id: version
+        env:
+          RAW_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+        run: |
+          TAG="${RAW_TAG//[[:space:]]/}"  # tags never contain spaces; drop stray ones from the dispatch input
+          if [ -n "$TAG" ]; then
+            VERSION_NAME="${TAG#v}"
+          else
+            VERSION_NAME="1.1.${GITHUB_RUN_NUMBER}"
+          fi
+          # 100 + run number keeps every CI build above the old hard-coded versionCode 2.
+          VERSION_CODE=$((100 + GITHUB_RUN_NUMBER))
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          {
+            echo "AUDIOBOOK_VERSION_NAME=$VERSION_NAME"
+            echo "AUDIOBOOK_VERSION_CODE=$VERSION_CODE"
+          } >> "$GITHUB_ENV"
+          echo "Building versionName $VERSION_NAME, versionCode $VERSION_CODE${TAG:+ for release $TAG}"
+
+      - name: Check the release exists
+        if: steps.version.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null \
+            || { echo "::error::No release with tag $TAG. Create it first, or run without a tag to get an artifact."; exit 1; }
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # Same as android.yml: v5 (Node 24); v6's closed-source caching component is not adopted.
+      - uses: gradle/actions/setup-gradle@v5
+
+      - name: Decode signing keystore
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$RELEASE_KEYSTORE_BASE64" ]; then
+            echo "::error::RELEASE_KEYSTORE_BASE64 is not set; refusing to build an unsigned or debug-signed release."
+            exit 1
+          fi
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/audiobook-release.jks"
+          chmod 600 "$RUNNER_TEMP/audiobook-release.jks"
+
+      - run: chmod +x gradlew
+
+      - name: Unit tests
+        run: ./gradlew --no-daemon testDebugUnitTest
+
+      - name: Build signed release APK
+        env:
+          AUDIOBOOK_KEYSTORE_FILE: ${{ runner.temp }}/audiobook-release.jks
+          AUDIOBOOK_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          AUDIOBOOK_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          AUDIOBOOK_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew --no-daemon assembleRelease
+
+      - name: Verify the APK is not debug-signed
+        run: |
+          apk=app/build/outputs/apk/release/app-release.apk
+          build_tools="$(printf '%s\n' "${ANDROID_HOME:-$ANDROID_SDK_ROOT}"/build-tools/* | sort -V | tail -n 1)"
+          certs="$("$build_tools/apksigner" verify --print-certs "$apk")"
+          echo "$certs"
+          if ! printf '%s\n' "$certs" | grep -q 'certificate DN:'; then
+            echo "::error::Could not read a signer certificate from $apk."
+            exit 1
+          fi
+          if printf '%s\n' "$certs" | grep 'certificate DN:' | grep -q 'Android Debug'; then
+            echo "::error::$apk is signed with an Android Debug certificate."
+            exit 1
+          fi
+          cp "$apk" "audiobook-${AUDIOBOOK_VERSION_NAME}.apk"
+
+      - name: Upload APK artifact
+        if: steps.version.outputs.tag == ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: audiobook-${{ env.AUDIOBOOK_VERSION_NAME }}
+          path: audiobook-${{ env.AUDIOBOOK_VERSION_NAME }}.apk
+          if-no-files-found: error
+
+      - name: Attach APK to the release
+        if: steps.version.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: gh release upload "$TAG" "audiobook-${AUDIOBOOK_VERSION_NAME}.apk" --clobber --repo "$GITHUB_REPOSITORY"
+
+      - name: Delete decoded keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/audiobook-release.jks"

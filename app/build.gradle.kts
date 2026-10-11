@@ -12,34 +12,38 @@ android {
     applicationId = "com.janreins.audiobook"
     minSdk = 26
     targetSdk = 36
-    versionCode = 2
-    versionName = "1.1.0"
+    // The release workflow passes AUDIOBOOK_VERSION_CODE (100 + run number, so always above the
+    // old hard-coded 2) and AUDIOBOOK_VERSION_NAME (the tag without its "v", or 1.1.<run>).
+    // Local builds keep 2 / 1.1.0.
+    versionCode = providers.environmentVariable("AUDIOBOOK_VERSION_CODE").orNull?.let {
+      it.toIntOrNull() ?: throw GradleException("AUDIOBOOK_VERSION_CODE must be a whole number, got '$it'.")
+    } ?: 2
+    versionName = providers.environmentVariable("AUDIOBOOK_VERSION_NAME").orNull?.takeIf { it.isNotBlank() } ?: "1.1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
-  val keystorePath = System.getenv("KEYSTORE_PATH")
-  val releaseStorePassword = System.getenv("STORE_PASSWORD")
-  val releaseKeyPassword = System.getenv("KEY_PASSWORD")
-  val releaseKeystore = keystorePath?.takeIf { it.isNotBlank() }?.let { file(it) }
-  if (releaseKeystore?.isFile == true &&
-    !releaseStorePassword.isNullOrBlank() && !releaseKeyPassword.isNullOrBlank()) {
-    signingConfigs {
-      create("release") {
-        storeFile = releaseKeystore
-        storePassword = releaseStorePassword
-        keyAlias = System.getenv("KEY_ALIAS")?.takeIf { it.isNotBlank() } ?: "upload"
-        keyPassword = releaseKeyPassword
-      }
+  signingConfigs {
+    // Release key from environment variables (set by .github/workflows/release.yml from the
+    // repository secrets, or by hand). There is deliberately no fallback (no debug key, no default
+    // alias, no unsigned build): a release APK signed with anything else can't be installed over
+    // the previous release. If the variables are missing, checkReleaseSigning (below) stops any
+    // release packaging task with a clear message. Debug builds, tests and lint don't need them.
+    create("release") {
+      storeFile = providers.environmentVariable("AUDIOBOOK_KEYSTORE_FILE").orNull
+        ?.takeIf { it.isNotBlank() }?.let { file(it) }
+      storePassword = providers.environmentVariable("AUDIOBOOK_KEYSTORE_PASSWORD").orNull
+      keyAlias = providers.environmentVariable("AUDIOBOOK_KEY_ALIAS").orNull
+      keyPassword = providers.environmentVariable("AUDIOBOOK_KEY_PASSWORD").orNull
     }
   }
 
   buildTypes {
     release {
+      signingConfig = signingConfigs.getByName("release")
       isCrunchPngs = false
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfigs.findByName("release")?.let { signingConfig = it }
     }
   }
   compileOptions {
@@ -55,6 +59,45 @@ android {
     includeInApk = false
     includeInBundle = true
   }
+}
+
+// Fails release packaging (assembleRelease, bundleRelease, ...) when the release key isn't
+// configured. The check runs at execution time, so configuring the project, debug builds,
+// unit tests and lint all work without the variables.
+val checkReleaseSigning = tasks.register("checkReleaseSigning") {
+  group = "verification"
+  description = "Fails unless the AUDIOBOOK_* release signing environment variables are set."
+  // Locals only (no script-level vals) so the doLast block is configuration-cache safe.
+  val releaseSigningVars = listOf(
+    "AUDIOBOOK_KEYSTORE_FILE",
+    "AUDIOBOOK_KEYSTORE_PASSWORD",
+    "AUDIOBOOK_KEY_ALIAS",
+    "AUDIOBOOK_KEY_PASSWORD",
+  )
+  val releaseSigningEnv = releaseSigningVars.associateWith { providers.environmentVariable(it) }
+  val appProjectDir = layout.projectDirectory
+  doLast {
+    val missing = releaseSigningEnv.filterValues { it.orNull.isNullOrBlank() }.keys
+    if (missing.isNotEmpty()) {
+      throw GradleException(
+        "Release signing is not configured: missing ${missing.joinToString()}. " +
+          "Set ${releaseSigningVars.joinToString()} to sign the release build " +
+          "(release builds are never signed with the debug key or left unsigned)."
+      )
+    }
+    // Resolved like file(...) in the signing config: relative paths are relative to app/.
+    val keystore = appProjectDir.file(releaseSigningEnv.getValue("AUDIOBOOK_KEYSTORE_FILE").get()).asFile
+    if (!keystore.isFile) {
+      throw GradleException(
+        "Release signing is not configured: AUDIOBOOK_KEYSTORE_FILE points to '$keystore', which doesn't exist."
+      )
+    }
+  }
+}
+tasks.matching {
+  it.name in setOf("validateSigningRelease", "packageRelease", "signReleaseBundle", "packageReleaseBundle")
+}.configureEach {
+  dependsOn(checkReleaseSigning)
 }
 
 // Essential dependencies for the pure-offline, privacy-first Audiobook player
