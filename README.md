@@ -36,7 +36,7 @@ A signed release build needs signing secrets (`KEYSTORE_PATH`, `STORE_PASSWORD`,
    - Configurable inner skip intervals: 5, 10, 15, 30, 45, or 60 seconds (defaults: back 15, forward 30).
    - A chapter list and previous/next chapter buttons for books with multiple chapters. The seek bar and skip controls operate within the current file.
    - **Playback Speed Selector**: 0.5x–3x in 0.05x steps, with a slider, presets, and reset.
-   - **Sleep Timer**: Choose 5, 10, 15, 30, 45, 60, or 90 minutes, or end of track. Live countdown, +5 minute extension, and optional fade-out over the last 30 seconds (enabled by default).
+   - **Sleep Timer**: Choose 5, 10, 15, 30, 45, 60, or 90 minutes, or end of track. End of track survives service recreation when the same book and track load within 30 minutes on the same device boot. Live countdown, +5 minute extension, and optional fade-out over the last 30 seconds (enabled by default).
    - **Playback settings**: Adjust skip intervals, smart rewind, and sleep fade-out from the player gear button. Smart rewind is enabled by default: resumes within the current track by 0/2/5/10/20 seconds depending on pause length.
 
 4. **Bookmarks**
@@ -46,9 +46,9 @@ A signed release build needs signing secrets (`KEYSTORE_PATH`, `STORE_PASSWORD`,
 
 5. **Progress Memory**
    - Automatically remembers the track and position for every book, even when choosing a different parent folder containing the same book sub-folders.
-   - Seamlessly resumes right where you left off when you open a book again.
+   - Resumes saved progress when you open a book again. Within two seconds of a track's end, it advances to the next track or plays the final tail on the last track. Bookmarks keep their exact positions.
    - Completed books keep 100% progress. Pressing play at the end (in the app, notification or headset) restarts the whole book; seeking back after finishing clears Finished and continues from there.
-   - Marking the loaded book finished or unplayed pauses it and moves the player to the end or the start.
+   - Marking the loaded book finished pauses it and clears the queue and media notification, keeping the book visible in the app; one press of Play restarts it. Marking it unplayed pauses it and moves to the start.
    - Stored 100% privately on your device using Android SharedPreferences.
 
 6. **Background Playback & Media3 Media Controls**

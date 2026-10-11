@@ -11,6 +11,7 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import com.janreins.audiobook.data.PreferencesManager
+import com.janreins.audiobook.data.LibraryStateStore
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.CommandButton
@@ -48,6 +49,7 @@ class PlaybackService : MediaSessionService() {
         }
     }
     private var sessionPlayer: SessionPlayer? = null
+    private var endOfTrackController: EndOfTrackController? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     companion object {
@@ -77,22 +79,16 @@ class PlaybackService : MediaSessionService() {
         val prefs = PreferencesManager(this).also { this.prefs = it }
         prefs.registerChangeListener(skipLabelListener)
         ChapterRepository.init(this)
+        val libraryState = LibraryStateStore(this)
         val sessionPlayer = SessionPlayer(player, object : SessionSettings {
             override fun skipBackMs() = prefs.getSkipBackSeconds() * 1000L
             override fun skipForwardMs() = prefs.getSkipForwardSeconds() * 1000L
             override fun smartRewindEnabled() = prefs.getSmartRewindEnabled()
+            override fun isFinished(bookId: String) = libraryState.isFinished(bookId)
         }, { ChapterRepository.indexes.value[it] }).also { this.sessionPlayer = it }
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) {
                 session?.setMediaButtonPreferences(mediaButtons(prefs))
-            }
-        })
-        // ExoPlayer owns this setting; MediaController does not expose it.
-        player.addListener(object : Player.Listener {
-            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-                if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM) {
-                    player.pauseAtEndOfMediaItems = false
-                }
             }
         })
         val activity = PendingIntent.getActivity(
@@ -135,7 +131,7 @@ class PlaybackService : MediaSessionService() {
                     customCommand: SessionCommand, args: Bundle
                 ): ListenableFuture<SessionResult> {
                     if (customCommand.customAction == END_OF_TRACK.customAction) {
-                        player.pauseAtEndOfMediaItems = args.getBoolean("enabled", false)
+                        endOfTrackController?.setEnabled(args.getBoolean("enabled", false))
                         return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
                     }
                     val delta = when (customCommand.customAction) {
@@ -152,6 +148,12 @@ class PlaybackService : MediaSessionService() {
             // Keep configured skips in the primary slots; navigation goes in the overflow.
             .setMediaButtonPreferences(mediaButtons(prefs))
             .build()
+        // ExoPlayer owns pauseAtEndOfMediaItems; controllers mirror the published session extras.
+        endOfTrackController = EndOfTrackController(player, { player.pauseAtEndOfMediaItems = it }, prefs, { enabled ->
+            session?.setSessionExtras(Bundle().apply {
+                putBoolean(EndOfTrackController.EXTRA_END_OF_TRACK, enabled)
+            })
+        })
         serviceScope.launch {
             ChapterRepository.indexes.collect {
                 sessionPlayer.invalidate()
@@ -217,6 +219,8 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         serviceScope.cancel()
         prefs?.unregisterChangeListener(skipLabelListener)
+        endOfTrackController?.release()
+        endOfTrackController = null
         session?.run { player.release(); release() }
         session = null
         coverBitmapLoader?.release()

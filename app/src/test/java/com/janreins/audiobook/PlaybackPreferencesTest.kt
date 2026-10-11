@@ -3,6 +3,8 @@ package com.janreins.audiobook
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.janreins.audiobook.data.PreferencesManager
+import com.janreins.audiobook.player.EotTarget
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertFalse
@@ -43,6 +45,18 @@ class PlaybackPreferencesTest {
         assertTrue(prefs.getSmartRewindEnabled())
         assertTrue(prefs.getSleepFadeOut())
     }
+    @Test fun endOfTrackTargetRoundTripAndClear() {
+        val prefs = PreferencesManager(context)
+        assertNull(prefs.endOfTrackTarget())
+        prefs.saveEndOfTrackTarget("book", 2, 120000L, 1120000L)
+        val restored = PreferencesManager(context)
+        assertEquals(EotTarget("book", 2, 120000L, 1120000L), restored.endOfTrackTarget())
+        restored.clearEndOfTrackTarget()
+        assertNull(prefs.endOfTrackTarget())
+        assertTrue(context.getSharedPreferences("audiobook_player_preferences", Context.MODE_PRIVATE).all.keys
+            .none { it.startsWith("eot_") })
+    }
+
     @Test fun invalidIntervalsUseDirectionalDefaults() {
         val prefs = PreferencesManager(context)
         prefs.saveSkipBackSeconds(7)

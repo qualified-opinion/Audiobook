@@ -2,6 +2,9 @@ package com.janreins.audiobook.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.SystemClock
+import com.janreins.audiobook.player.EndOfTrackStore
+import com.janreins.audiobook.player.EotTarget
 import com.janreins.audiobook.player.SkipIntervals
 import com.janreins.audiobook.data.model.BookProgress
 import com.janreins.audiobook.data.model.Bookmark
@@ -13,7 +16,7 @@ import org.json.JSONObject
  * Manages simple, local, and 100% private persistence using Android's SharedPreferences.
  * No data ever leaves the device.
  */
-class PreferencesManager(context: Context) {
+class PreferencesManager(context: Context) : EndOfTrackStore {
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -111,6 +114,28 @@ class PreferencesManager(context: Context) {
     fun getSleepFadeOut() = prefs.getBoolean("sleep_fade_out", true)
     fun saveSleepFadeOut(enabled: Boolean) {
         prefs.edit().putBoolean("sleep_fade_out", enabled).apply()
+    }
+
+    override fun endOfTrackTarget(): EotTarget? {
+        val book = prefs.getString("eot_book", null) ?: return null
+        return EotTarget(book, prefs.getInt("eot_track", 0),
+            prefs.getLong("eot_updated_at", -1L), prefs.getLong("eot_wall_time", -1L))
+    }
+
+    fun saveEndOfTrackTarget(bookId: String, trackIndex: Int,
+                             elapsedRealtimeMs: Long = SystemClock.elapsedRealtime(),
+                             wallTimeMs: Long = System.currentTimeMillis()) =
+        saveEndOfTrackTarget(EotTarget(bookId, trackIndex, elapsedRealtimeMs, wallTimeMs))
+
+    override fun saveEndOfTrackTarget(target: EotTarget) {
+        prefs.edit().putString("eot_book", target.bookId).putInt("eot_track", target.trackIndex)
+            .putLong("eot_updated_at", target.updatedAtElapsedRealtimeMs)
+            .putLong("eot_wall_time", target.updatedAtWallTimeMs).apply()
+    }
+
+    override fun clearEndOfTrackTarget() {
+        prefs.edit().remove("eot_book").remove("eot_track").remove("eot_updated_at")
+            .remove("eot_wall_time").apply()
     }
 
     fun registerChangeListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) =
