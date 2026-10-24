@@ -7,8 +7,14 @@ class DurationCache(context: Context) {
     private val prefs = context.getSharedPreferences("duration_cache", Context.MODE_PRIVATE)
     private val entries = deserialize(prefs.getString("entries", "{}").orEmpty()).toMutableMap()
 
-    fun get(key: String): Long? = entries[key]
-    fun put(key: String, durationMs: Long) { entries[key] = durationMs }
+    /**
+     * Only real durations are kept. 0 means the file could not be read (for example while it was still
+     * syncing), so it is read again on the next scan instead of staying "0:00" until the file changes.
+     */
+    fun get(key: String): Long? = entries[key]?.takeIf { it > 0L }
+    fun put(key: String, durationMs: Long) {
+        if (durationMs > 0L) entries[key] = durationMs else entries.remove(key)
+    }
     fun save(seen: Set<String>) {
         if (entries.size > 5000) entries.keys.retainAll(seen)
         prefs.edit().putString("entries", serialize(entries)).apply()
