@@ -199,7 +199,7 @@ fun AudiobookApp(
                         onSkipForward1m = { viewModel.skipForward1m() },
                         onSetPlaybackSpeed = { speed -> viewModel.setPlaybackSpeed(speed) },
                         onSetSleepTimer = { option -> viewModel.setSleepTimer(option, context) },
-                        onAddBookmark = { title -> viewModel.addBookmark(title) },
+                        onAddBookmark = { title, trackIndex, positionMs -> viewModel.addBookmark(title, trackIndex, positionMs) },
                         onSelectBookmark = { bookmark -> viewModel.selectBookmark(context, bookmark) },
                         onDeleteBookmark = { bookmark -> viewModel.deleteBookmark(bookmark) },
                         onDismissError = { viewModel.dismissError() }

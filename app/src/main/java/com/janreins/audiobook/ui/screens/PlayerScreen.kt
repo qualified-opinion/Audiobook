@@ -111,7 +111,7 @@ fun PlayerScreen(
     onSkipForward1m: () -> Unit,
     onSetPlaybackSpeed: (Float) -> Unit,
     onSetSleepTimer: (SleepTimerOption) -> Unit,
-    onAddBookmark: (String) -> Unit,
+    onAddBookmark: (title: String, trackIndex: Int, positionMs: Long) -> Unit,
     onSelectBookmark: (Bookmark) -> Unit,
     onDeleteBookmark: (Bookmark) -> Unit,
     onDismissError: () -> Unit,
@@ -589,6 +589,7 @@ fun PlayerScreen(
     if (showAddBookmarkDialog) {
         AddBookmarkDialog(
             currentPositionMs = currentPositionMs,
+            currentTrackIndex = currentTrackIndex,
             onDismiss = { showAddBookmarkDialog = false },
             onSaveBookmark = onAddBookmark
         )

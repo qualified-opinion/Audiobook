@@ -48,17 +48,19 @@ import com.janreins.audiobook.data.AudiobookRepository
 import com.janreins.audiobook.data.model.Bookmark
 
 /**
- * Dialog allowing the user to add a bookmark at the current playback timestamp.
+ * Dialog allowing the user to add a bookmark at the playback timestamp when it was opened.
  */
 @Composable
 fun AddBookmarkDialog(
     currentPositionMs: Long,
     onDismiss: () -> Unit,
-    onSaveBookmark: (title: String) -> Unit
+    onSaveBookmark: (title: String, trackIndex: Int, positionMs: Long) -> Unit,
+    currentTrackIndex: Int = 0
 ) {
-    val formattedTime = remember(currentPositionMs) {
-        AudiobookRepository.formatDuration(currentPositionMs)
-    }
+    // Playback keeps going while the note is typed: save the spot where MARK was tapped.
+    val markedTrackIndex = remember { currentTrackIndex }
+    val markedPositionMs = remember { currentPositionMs }
+    val formattedTime = remember { AudiobookRepository.formatDuration(markedPositionMs) }
     var titleText by remember { mutableStateOf("") }
 
     AlertDialog(
@@ -106,7 +108,7 @@ fun AddBookmarkDialog(
             Button(
                 onClick = {
                     val finalTitle = titleText.trim().ifEmpty { "Bookmark at $formattedTime" }
-                    onSaveBookmark(finalTitle)
+                    onSaveBookmark(finalTitle, markedTrackIndex, markedPositionMs)
                     onDismiss()
                 },
                 shape = RoundedCornerShape(14.dp),

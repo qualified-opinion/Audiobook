@@ -308,15 +308,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         AudiobookPlayerManager.setSleepTimer(option, context)
     }
 
-    fun addBookmark(title: String) {
+    /** [trackIndex] and [positionMs] are where the user tapped MARK, not where playback is now. */
+    fun addBookmark(title: String, trackIndex: Int, positionMs: Long) {
         val currentBook = AudiobookPlayerManager.currentBook.value ?: return
-        val pos = AudiobookPlayerManager.currentPositionMs.value
         val bookmark = Bookmark(
             id = System.currentTimeMillis().toString(),
             audiobookId = currentBook.id,
-            positionMs = pos,
+            positionMs = positionMs.coerceAtLeast(0L),
             title = title,
-            trackIndex = AudiobookPlayerManager.currentTrackIndex.value
+            trackIndex = trackIndex.coerceIn(0, currentBook.trackCount - 1)
         )
         prefs.addBookmark(bookmark)
         _currentBookmarks.value = prefs.getBookmarks(currentBook.id)
