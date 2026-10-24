@@ -6,9 +6,9 @@ A simple, reliable, 100% offline and privacy-first audiobook player for Android.
 
 Every push to `main` and every pull request builds a debug APK in GitHub Actions. While signed in to GitHub, open the **Actions** tab → an **Android CI** run → **Artifacts** → **app-debug-apk** to download a zip containing `app-debug.apk`.
 
-Pushing a tag like `v1.0.0` creates a GitHub Release with the APK attached under **Releases**. This is a debug-signed build; enable **Install unknown apps** on your Android device to sideload it.
+**Release APK (signed with your release key):** publish a release on GitHub (**Releases** → **Draft a new release**, tag such as `v1.2.0` → **Publish**). The **Release APK** workflow then builds `audiobook-<version>.apk`, signed with your release key, and attaches it to that release. You can also run it by hand from **Actions** → **Release APK** → **Run workflow** (leave the tag empty to get the APK as an Actions artifact only). Enable **Install unknown apps** on your Android device to sideload it.
 
-A signed release build needs signing secrets (`KEYSTORE_PATH`, `STORE_PASSWORD`, `KEY_PASSWORD`, and optional `KEY_ALIAS`, which defaults to `upload`) and is not built by CI yet.
+The workflow needs four repository secrets: `RELEASE_KEYSTORE_BASE64` (the keystore file, base64-encoded), `KEYSTORE_PASSWORD`, `KEY_ALIAS` and `KEY_PASSWORD`. If any is missing it stops with an error; it never falls back to the debug key or an unsigned APK, because Android only installs an update over an app signed with the same key. Locally, `./gradlew assembleRelease` reads `AUDIOBOOK_KEYSTORE_FILE`, `AUDIOBOOK_KEYSTORE_PASSWORD`, `AUDIOBOOK_KEY_ALIAS` and `AUDIOBOOK_KEY_PASSWORD` instead.
 
 ## Features
 

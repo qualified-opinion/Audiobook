@@ -149,7 +149,7 @@ fun LibraryScreen(
                         )
                         if (audiobooks.isNotEmpty()) {
                             Text(
-                                text = "${audiobooks.size} audio ${if (audiobooks.size == 1) "track" else "tracks"}",
+                                text = "${audiobooks.size} ${if (audiobooks.size == 1) "audiobook" else "audiobooks"}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
