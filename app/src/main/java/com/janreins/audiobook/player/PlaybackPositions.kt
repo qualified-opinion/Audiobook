@@ -16,6 +16,10 @@ object PlaybackPositions {
         return index to clamp(savedMs, trackDurationMs)
     }
 
+    /** Time from the start of the whole book: the full length of earlier files plus the spot in this one. */
+    fun bookPosition(trackDurationsMs: List<Long>, trackIndex: Int, positionMs: Long): Long =
+        trackDurationsMs.take(trackIndex.coerceAtLeast(0)).sumOf { it.coerceAtLeast(0L) } + positionMs.coerceAtLeast(0L)
+
     fun positionAfterCompletion(durationMs: Long): Long = durationMs.coerceAtLeast(0L)
 
     class SaveThrottle(private val intervalMs: Long = 5000) {

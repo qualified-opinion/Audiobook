@@ -114,7 +114,9 @@ fun LibraryScreen(
     onDismissMessage: () -> Unit = {},
     onBackupClick: () -> Unit = {},
     onRestoreClick: () -> Unit = {},
-    scannedFileCount: Int = 0
+    scannedFileCount: Int = 0,
+    /** Live position in the whole playing book, so its row updates while it plays. */
+    playingBookPositionMs: Long? = null
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var showThemeDialog by remember { mutableStateOf(false) }
@@ -414,8 +416,8 @@ fun LibraryScreen(
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             items(filteredAudiobooks, key = { it.id }) { book ->
-                                val savedPos = getSavedPosition(book.id)
                                 val isSelected = currentPlayingBook?.id == book.id
+                                val savedPos = playingBookPositionMs?.takeIf { isSelected } ?: getSavedPosition(book.id)
 
                                 AudiobookListItem(
                                     audiobook = book,

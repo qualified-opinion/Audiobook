@@ -1,6 +1,9 @@
 package com.janreins.audiobook
 
 import android.net.Uri
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -21,14 +24,26 @@ import org.robolectric.annotation.Config
 class LibraryRefreshTest {
     @get:Rule val composeTestRule = createComposeRule()
 
-    private fun show(books: List<Audiobook>, loading: Boolean, found: Int) = composeTestRule.setContent {
+    private fun show(books: List<Audiobook>, loading: Boolean, found: Int, playing: Audiobook? = null,
+                     livePosition: () -> Long? = { null }) = composeTestRule.setContent {
         AudiobookTheme {
             LibraryScreen(
-                audiobooks = books, isLoading = loading, currentPlayingBook = null, isPlaying = false,
+                audiobooks = books, isLoading = loading, currentPlayingBook = playing, isPlaying = playing != null,
                 getSavedPosition = { 0L }, onBookClick = {}, onMiniPlayerClick = {}, onTogglePlayPause = {},
-                onChangeFolderClick = {}, onRefresh = {}, scannedFileCount = found
+                onChangeFolderClick = {}, onRefresh = {}, scannedFileCount = found,
+                playingBookPositionMs = livePosition()
             )
         }
+    }
+
+    @Test fun playingBookRowFollowsTheLivePosition() {
+        val book = Audiobook("folder:a", Uri.parse("content://books/a"), "Dune", "Dune.m4b", durationMs = 100_000)
+        var position by mutableStateOf(25_000L)
+        show(listOf(book), loading = false, found = 0, playing = book) { position }
+        composeTestRule.onNodeWithText("25%", substring = true).assertIsDisplayed()
+        position = 50_000L
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("50%", substring = true).assertIsDisplayed()
     }
 
     @Test fun rescanKeepsTheListVisibleWithAProgressLine() {

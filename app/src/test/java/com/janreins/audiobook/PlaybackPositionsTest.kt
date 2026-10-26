@@ -59,4 +59,12 @@ class PlaybackPositionsTest {
         assertFalse(throttle.shouldSave(6001))
         assertTrue(throttle.shouldSave(11001))
     }
+
+    @Test fun bookPositionAddsTheLengthOfEarlierFiles() {
+        val tracks = listOf(60_000L, 120_000L, 30_000L)
+        assertEquals(5_000L, PlaybackPositions.bookPosition(tracks, 0, 5_000))
+        assertEquals(185_000L, PlaybackPositions.bookPosition(tracks, 2, 5_000))
+        // Unknown (0) lengths and bad input never make the time go negative.
+        assertEquals(60_000L, PlaybackPositions.bookPosition(listOf(0L, 60_000L), 2, -1))
+    }
 }

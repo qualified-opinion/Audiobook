@@ -24,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import com.janreins.audiobook.player.PlaybackPositions
 import com.janreins.audiobook.ui.screens.FolderSelectionScreen
 import com.janreins.audiobook.ui.screens.LibraryScreen
 import com.janreins.audiobook.ui.screens.PlayerScreen
@@ -156,6 +157,9 @@ fun AudiobookApp(
                     onMarkUnplayed = viewModel::markUnplayed,
                     isLoading = isLoading,
                     scannedFileCount = scannedFileCount,
+                    playingBookPositionMs = currentPlayingBook?.let { book ->
+                        PlaybackPositions.bookPosition(book.tracks.map { it.durationMs }, currentTrackIndex, currentPositionMs)
+                    },
                     currentPlayingBook = currentPlayingBook,
                     isPlaying = isPlaying,
                     currentThemeMode = currentThemeMode,
