@@ -380,6 +380,9 @@ object AudiobookPlayerManager {
                 saveSnapshot(book, prefsManager?.getFolderUri())
                 val items = BookMediaItems.forBook(book)
                 player.setMediaItems(items, index, start)
+                // The previous book may have kept an old folder's access after a folder change; it is free now.
+                appContext?.let { FolderAccess.releaseUnusedTrees(it.contentResolver,
+                    prefsManager?.getFolderUri()?.toUri(), book) }
                 player.prepare()
                 player.setPlaybackSpeed(_playbackSpeed.value)
                 player.play()

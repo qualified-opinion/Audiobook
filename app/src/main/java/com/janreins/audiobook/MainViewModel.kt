@@ -4,7 +4,6 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.provider.DocumentsContract
 import com.janreins.audiobook.data.FolderAccess
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -172,6 +171,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _currentScreen.value = AppScreen.FOLDER_SELECTION
                 return
             }
+            // Leftover access to a previous folder is no longer needed unless its book is still loaded.
+            FolderAccess.releaseUnusedTrees(getApplication<Application>().contentResolver, uri,
+                AudiobookPlayerManager.currentBook.value)
             _folderUri.value = uri
             _currentScreen.value = AppScreen.LIBRARY
             loadAudiobooks(uri)
@@ -195,19 +197,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        context.contentResolver.persistedUriPermissions.forEach { permission ->
-            if (permission.uri != uri && DocumentsContract.isTreeUri(permission.uri)) {
-                val flags = (if (permission.isReadPermission) Intent.FLAG_GRANT_READ_URI_PERMISSION else 0) or
-                    (if (permission.isWritePermission) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)
-                try {
-                    context.contentResolver.releasePersistableUriPermission(permission.uri, flags)
-                } catch (e: SecurityException) {
-                    Log.w("MainViewModel", "Could not release old folder permission", e)
-                }
-            }
-        }
+        // A book from the old folder may still be playing: keep that folder's access until another book starts.
+        val loaded = AudiobookPlayerManager.currentBook.value
+        val keptForLoaded = FolderAccess.releaseUnusedTrees(context.contentResolver, uri, loaded)
         ResumeSnapshotStore(context).clear()
-        _folderMessage.value = null
+        _folderMessage.value = if (keptForLoaded && loaded != null)
+            "\u201C${loaded.title}\u201D keeps playing from your previous folder until you start another book." else null
         prefs.saveFolderUri(uri.toString())
         _folderUri.value = uri
         _currentScreen.value = AppScreen.LIBRARY
