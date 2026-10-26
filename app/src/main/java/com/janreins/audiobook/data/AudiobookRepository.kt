@@ -8,7 +8,9 @@ import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import com.janreins.audiobook.data.model.Audiobook
 import com.janreins.audiobook.data.model.ScannedAudioFile
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
@@ -34,24 +36,38 @@ class AudiobookRepository(private val context: Context) {
 
     suspend fun loadAudiobooksFromFolder(folderUri: Uri): List<Audiobook> = loadLibrary(folderUri).books
 
-    suspend fun loadLibrary(folderUri: Uri): LibraryScan = withContext(Dispatchers.IO) {
-        val files = readAudioFiles(folderUri)
-        LibraryScan(BookGrouping.group(files ?: emptyList()), files != null)
-    }
+    /**
+     * [onAudioFileFound] gets the number of audio files found so far, for a progress line. Cancelling
+     * the calling coroutine stops the scan between files; nothing is saved or pruned then.
+     */
+    suspend fun loadLibrary(folderUri: Uri, onAudioFileFound: (Int) -> Unit = {}): LibraryScan =
+        withContext(Dispatchers.IO) {
+            val scope = this
+            val files = readAudioFiles(folderUri, ScanProgress({ scope.ensureActive() }, onAudioFileFound))
+            LibraryScan(BookGrouping.group(files ?: emptyList()), files != null)
+        }
 
     suspend fun scanAudioFiles(folderUri: Uri): List<ScannedAudioFile> = withContext(Dispatchers.IO) {
-        readAudioFiles(folderUri) ?: emptyList()
+        val scope = this
+        readAudioFiles(folderUri, ScanProgress({ scope.ensureActive() }, {})) ?: emptyList()
+    }
+
+    private class ScanProgress(val ensureActive: () -> Unit, private val onAudioFileFound: (Int) -> Unit) {
+        private var found = 0
+        fun audioFileFound() = onAudioFileFound(++found)
     }
 
     /** null means an unreadable root; a genuinely empty folder is a successful scan. */
-    private fun readAudioFiles(folderUri: Uri): List<ScannedAudioFile>? {
+    private fun readAudioFiles(folderUri: Uri, progress: ScanProgress): List<ScannedAudioFile>? {
         val results = mutableListOf<ScannedAudioFile>()
         val seen = mutableSetOf<String>()
         val rootDirectory = try {
             DocumentFile.fromTreeUri(context, folderUri)?.takeIf { it.exists() && it.isDirectory }
         } catch (_: Exception) { null } ?: return null
         try {
-            scanDirectoryRecursively(rootDirectory.uri, rootDirectory.name, 0, 3, results, seen)
+            scanDirectoryRecursively(rootDirectory.uri, rootDirectory.name, 0, 3, results, seen, progress)
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) { return null }
 
         durationCache.save(seen)
@@ -70,14 +86,16 @@ class AudiobookRepository(private val context: Context) {
         currentDepth: Int,
         maxDepth: Int,
         results: MutableList<ScannedAudioFile>,
-        seen: MutableSet<String>
+        seen: MutableSet<String>,
+        progress: ScanProgress
     ) {
+        progress.ensureActive()
         val children = try {
             // A null cursor (rather than an empty one) means the folder couldn't be read, so a failed
             // root is distinguishable from an empty folder.
             queryChildren(directoryUri) ?: throw java.io.IOException("Cannot read audiobook folder")
         } catch (e: Exception) {
-            if (currentDepth == 0) throw e
+            if (currentDepth == 0 || e is CancellationException) throw e
             emptyList()
         }
 
@@ -85,11 +103,12 @@ class AudiobookRepository(private val context: Context) {
         val members = mutableListOf<ScannedAudioFile>()
         val images = mutableMapOf<String, FolderEntry>()
         for (child in children) {
+            progress.ensureActive()
             try {
                 val uri = DocumentsContract.buildDocumentUriUsingTree(directoryUri, child.documentId)
                 if (child.isDirectory) {
                     if (currentDepth < maxDepth) {
-                        scanDirectoryRecursively(uri, child.name, currentDepth + 1, maxDepth, results, seen)
+                        scanDirectoryRecursively(uri, child.name, currentDepth + 1, maxDepth, results, seen, progress)
                     }
                     continue
                 }
@@ -105,7 +124,10 @@ class AudiobookRepository(private val context: Context) {
                     }
                     members.add(ScannedAudioFile(uri, child.documentId, child.name ?: "Untitled Audio",
                         child.sizeBytes, child.lastModified, directoryId, directoryName, currentDepth == 0, duration))
+                    progress.audioFileFound()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 // Ignore single file or sub-folder read failures so the rest continues uninterrupted
             }
