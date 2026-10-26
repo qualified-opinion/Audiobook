@@ -28,10 +28,10 @@ unit tests, lint and a debug APK) passes before it is merged. Sizes: **S** = an 
 
 | # | What | Why it matters | Size |
 |---|------|----------------|------|
-| 2.1 | **Faster folder scan**: read name, type, size and date for all files of a folder in one query, instead of about five separate queries per file (`AudiobookRepository.scanDirectoryRecursively`). | Scans of libraries with thousands of files are slow, especially on SD cards and cloud folders. | M |
-| 2.2 | **Refresh without hiding the library**: keep the list visible with a small progress bar while rescanning, and cancel a scan that is still running when Refresh is tapped again. | Today the whole list disappears behind a spinner, and two taps start two scans. | S |
-| 2.3 | **Live progress in the library**: the percentage and "time left" of the playing book only update when the list is redrawn for another reason. *Needs a check on a phone.* | Small, but visible. | S |
-| 2.4 | **Bookmarks in multi-file books** show only the time inside the file (two bookmarks can both say `05:12`). Show the chapter or file name and the time in the whole book, as the chapter list already does. | Makes bookmarks readable for folder books. | S |
+| 2.1 | ~~**Faster folder scan**~~ **Done:** one query per folder. Was: read name, type, size and date for all files of a folder in one query, instead of about five separate queries per file (`AudiobookRepository.scanDirectoryRecursively`). | Scans of libraries with thousands of files are slow, especially on SD cards and cloud folders. | M |
+| 2.2 | ~~**Refresh without hiding the library**~~ **Done:** progress bar and "N audio files found" above the list; Refresh again restarts the scan. Was: keep the list visible with a small progress bar while rescanning, and cancel a scan that is still running when Refresh is tapped again. | Today the whole list disappears behind a spinner, and two taps start two scans. | S |
+| 2.3 | ~~**Live progress in the library**~~ **Done** (worth a look on a phone). Was: the percentage and "time left" of the playing book only update when the list is redrawn for another reason. *Needs a check on a phone.* | Small, but visible. | S |
+| 2.4 | ~~**Bookmarks in multi-file books**~~ **Done:** the list shows the time in the whole book and the chapter or file. Was: show only the time inside the file (two bookmarks can both say `05:12`). Show the chapter or file name and the time in the whole book, as the chapter list already does. | Makes bookmarks readable for folder books. | S |
 
 ## 3. Sleep timer
 

@@ -42,6 +42,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -112,7 +113,10 @@ fun LibraryScreen(
     message: String? = null,
     onDismissMessage: () -> Unit = {},
     onBackupClick: () -> Unit = {},
-    onRestoreClick: () -> Unit = {}
+    onRestoreClick: () -> Unit = {},
+    scannedFileCount: Int = 0,
+    /** Live position in the whole playing book, so its row updates while it plays. */
+    playingBookPositionMs: Long? = null
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var showThemeDialog by remember { mutableStateOf(false) }
@@ -252,7 +256,8 @@ fun LibraryScreen(
                 .background(MaterialTheme.colorScheme.background)
         ) {
             when {
-                isLoading -> {
+                // First scan of a folder: nothing to show yet. A rescan keeps the list (below).
+                isLoading && audiobooks.isEmpty() -> {
                     Column(
                         modifier = Modifier.fillMaxSize(),
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -265,7 +270,7 @@ fun LibraryScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = "Scanning folder and sub-folders...",
+                            text = scanningLabel(scannedFileCount),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -327,6 +332,17 @@ fun LibraryScreen(
 
                 else -> {
                     Column(modifier = Modifier.fillMaxSize()) {
+                        if (isLoading) {
+                            LinearProgressIndicator(
+                                modifier = Modifier.fillMaxWidth().testTag("library_refresh_progress")
+                            )
+                            Text(
+                                text = scanningLabel(scannedFileCount),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                            )
+                        }
                         // Search / Filter Bar (if 2+ books)
                         if (audiobooks.size > 1) {
                             OutlinedTextField(
@@ -400,8 +416,8 @@ fun LibraryScreen(
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             items(filteredAudiobooks, key = { it.id }) { book ->
-                                val savedPos = getSavedPosition(book.id)
                                 val isSelected = currentPlayingBook?.id == book.id
+                                val savedPos = playingBookPositionMs?.takeIf { isSelected } ?: getSavedPosition(book.id)
 
                                 AudiobookListItem(
                                     audiobook = book,
@@ -493,6 +509,12 @@ fun MiniPlayerBar(
             }
         }
     }
+}
+
+internal fun scanningLabel(audioFilesFound: Int): String = when (audioFilesFound) {
+    0 -> "Scanning folder and sub-folders..."
+    1 -> "Scanning folder and sub-folders... 1 audio file found"
+    else -> "Scanning folder and sub-folders... $audioFilesFound audio files found"
 }
 
 private fun LibrarySort.label(): String = when (this) {

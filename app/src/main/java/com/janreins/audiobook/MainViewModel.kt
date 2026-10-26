@@ -27,6 +27,7 @@ import com.janreins.audiobook.player.BookChapter
 import com.janreins.audiobook.player.AudiobookPlayerManager
 import com.janreins.audiobook.ui.theme.AppThemeMode
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -107,6 +108,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    /** Audio files found so far by the running scan, for the "Scanning… 120 files" line. */
+    private val _scannedFileCount = MutableStateFlow(0)
+    val scannedFileCount: StateFlow<Int> = _scannedFileCount.asStateFlow()
+    private var scanJob: Job? = null
+    private var listedFolderUri: Uri? = null
 
     private val _currentBookmarks = MutableStateFlow<List<Bookmark>>(emptyList())
     val currentBookmarks: StateFlow<List<Bookmark>> = _currentBookmarks.asStateFlow()
@@ -210,13 +217,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Scans and loads audio files from the given folder URI (including sub-folders).
+     * Scans and loads audio files from the given folder URI (including sub-folders). A scan that is
+     * still running is cancelled first, so tapping Refresh twice doesn't run two scans.
      */
     fun loadAudiobooks(uri: Uri? = _folderUri.value) {
         if (uri == null) return
-        viewModelScope.launch {
+        scanJob?.cancel()
+        // The list stays visible while a folder is rescanned, but not while a different one is scanned.
+        if (uri != listedFolderUri) _audiobooks.value = emptyList()
+        scanJob = viewModelScope.launch {
             _isLoading.value = true
-            val scan = repository.loadLibrary(uri)
+            _scannedFileCount.value = 0
+            val scan = repository.loadLibrary(uri) { _scannedFileCount.value = it }
             val books = scan.books
             books.forEach { book ->
                 ProgressMigration.migrate(book, prefs::hasBookProgress, prefs::getPlaybackPosition,
@@ -230,6 +242,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             AudiobookPlayerManager.reconcileLibrary(books, scan.succeeded)
             _audiobooks.value = books
+            listedFolderUri = uri
             _isLoading.value = false
 
             // If we have a last played book, update bookmarks for it

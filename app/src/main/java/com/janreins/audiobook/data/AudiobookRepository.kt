@@ -1,13 +1,16 @@
 package com.janreins.audiobook.data
 
 import android.content.Context
+import android.database.Cursor
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import com.janreins.audiobook.data.model.Audiobook
 import com.janreins.audiobook.data.model.ScannedAudioFile
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
@@ -33,24 +36,38 @@ class AudiobookRepository(private val context: Context) {
 
     suspend fun loadAudiobooksFromFolder(folderUri: Uri): List<Audiobook> = loadLibrary(folderUri).books
 
-    suspend fun loadLibrary(folderUri: Uri): LibraryScan = withContext(Dispatchers.IO) {
-        val files = readAudioFiles(folderUri)
-        LibraryScan(BookGrouping.group(files ?: emptyList()), files != null)
-    }
+    /**
+     * [onAudioFileFound] gets the number of audio files found so far, for a progress line. Cancelling
+     * the calling coroutine stops the scan between files; nothing is saved or pruned then.
+     */
+    suspend fun loadLibrary(folderUri: Uri, onAudioFileFound: (Int) -> Unit = {}): LibraryScan =
+        withContext(Dispatchers.IO) {
+            val scope = this
+            val files = readAudioFiles(folderUri, ScanProgress({ scope.ensureActive() }, onAudioFileFound))
+            LibraryScan(BookGrouping.group(files ?: emptyList()), files != null)
+        }
 
     suspend fun scanAudioFiles(folderUri: Uri): List<ScannedAudioFile> = withContext(Dispatchers.IO) {
-        readAudioFiles(folderUri) ?: emptyList()
+        val scope = this
+        readAudioFiles(folderUri, ScanProgress({ scope.ensureActive() }, {})) ?: emptyList()
+    }
+
+    private class ScanProgress(val ensureActive: () -> Unit, private val onAudioFileFound: (Int) -> Unit) {
+        private var found = 0
+        fun audioFileFound() = onAudioFileFound(++found)
     }
 
     /** null means an unreadable root; a genuinely empty folder is a successful scan. */
-    private fun readAudioFiles(folderUri: Uri): List<ScannedAudioFile>? {
+    private fun readAudioFiles(folderUri: Uri, progress: ScanProgress): List<ScannedAudioFile>? {
         val results = mutableListOf<ScannedAudioFile>()
         val seen = mutableSetOf<String>()
         val rootDirectory = try {
             DocumentFile.fromTreeUri(context, folderUri)?.takeIf { it.exists() && it.isDirectory }
         } catch (_: Exception) { null } ?: return null
         try {
-            scanDirectoryRecursively(rootDirectory, 0, 3, results, seen)
+            scanDirectoryRecursively(rootDirectory.uri, rootDirectory.name, 0, 3, results, seen, progress)
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) { return null }
 
         durationCache.save(seen)
@@ -59,94 +76,95 @@ class AudiobookRepository(private val context: Context) {
     }
 
     /**
-     * Helper method to scan files in a directory and recurse into sub-folders.
-     * Handles edge cases gently: empty sub-folders, permission issues, or non-audio items.
+     * Scans one folder and recurses into its sub-folders. Name, type, size and date of every child
+     * come from a single query per folder (the old DocumentFile calls made about five queries per
+     * file, which was slow on SD cards and cloud folders). Unreadable sub-folders and files are skipped.
      */
     private fun scanDirectoryRecursively(
-        directory: DocumentFile,
+        directoryUri: Uri,
+        directoryName: String?,
         currentDepth: Int,
         maxDepth: Int,
         results: MutableList<ScannedAudioFile>,
-        seen: MutableSet<String>
+        seen: MutableSet<String>,
+        progress: ScanProgress
     ) {
-        val files = try {
-            // DocumentFile.listFiles hides failed reads as empty lists. Query directly so a failed
-            // root is distinguishable from an empty folder, while unreadable sub-folders are skipped.
-            val children = DocumentsContract.buildChildDocumentsUriUsingTree(directory.uri,
-                DocumentsContract.getDocumentId(directory.uri))
-            val cursor = context.contentResolver.query(children,
-                arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null)
-                ?: throw java.io.IOException("Cannot read audiobook folder")
-            cursor.use {
-                val files = mutableListOf<DocumentFile>()
-                while (it.moveToNext()) {
-                    val uri = DocumentsContract.buildDocumentUriUsingTree(directory.uri, it.getString(0))
-                    DocumentFile.fromSingleUri(context, uri)?.let(files::add)
-                }
-                files.toTypedArray()
-            }
+        progress.ensureActive()
+        val children = try {
+            // A null cursor (rather than an empty one) means the folder couldn't be read, so a failed
+            // root is distinguishable from an empty folder.
+            queryChildren(directoryUri) ?: throw java.io.IOException("Cannot read audiobook folder")
         } catch (e: Exception) {
-            if (currentDepth == 0) throw e
-            emptyArray()
+            if (currentDepth == 0 || e is CancellationException) throw e
+            emptyList()
         }
 
+        val directoryId = documentId(directoryUri)
         val members = mutableListOf<ScannedAudioFile>()
-        val images = mutableMapOf<String, DocumentFile>()
-        for (file in files) {
+        val images = mutableMapOf<String, FolderEntry>()
+        for (child in children) {
+            progress.ensureActive()
             try {
-                val name = file.name
-                val isFile = file.isFile
-                if (currentDepth > 0 && isFile && name != null &&
-                    CoverSources.pickFolderCover(listOf(name)) != null) {
-                    images.putIfAbsent(name, file)
+                val uri = DocumentsContract.buildDocumentUriUsingTree(directoryUri, child.documentId)
+                if (child.isDirectory) {
+                    if (currentDepth < maxDepth) {
+                        scanDirectoryRecursively(uri, child.name, currentDepth + 1, maxDepth, results, seen, progress)
+                    }
+                    continue
                 }
-                if (isFile && isAudioFile(file)) {
-                    val fileName = name ?: "Untitled Audio"
-                    val size = file.length()
-                    val modified = file.lastModified()
-                    val id = documentId(file.uri)
-                    val key = DurationCache.key(id, size, modified)
+                if (!child.isFile) continue
+                if (currentDepth > 0 && child.name != null && CoverSources.pickFolderCover(listOf(child.name)) != null) {
+                    images.putIfAbsent(child.name, child)
+                }
+                if (child.isAudio(supportedExtensions)) {
+                    val key = DurationCache.key(child.documentId, child.sizeBytes, child.lastModified)
                     seen.add(key)
-                    val duration = durationCache.get(key) ?: extractDuration(file.uri).also {
+                    val duration = durationCache.get(key) ?: extractDuration(uri).also {
                         durationCache.put(key, it)
                     }
-                    members.add(ScannedAudioFile(file.uri, id, fileName, size, modified,
-                        documentId(directory.uri), directory.name, currentDepth == 0, duration))
-                } else if (file.isDirectory && currentDepth < maxDepth) {
-                    // Dive into the sub-folder to look for more audio files
-                    scanDirectoryRecursively(
-                        directory = file,
-                        currentDepth = currentDepth + 1,
-                        maxDepth = maxDepth,
-                        results = results,
-                        seen = seen
-                    )
+                    members.add(ScannedAudioFile(uri, child.documentId, child.name ?: "Untitled Audio",
+                        child.sizeBytes, child.lastModified, directoryId, directoryName, currentDepth == 0, duration))
+                    progress.audioFileFound()
                 }
-            } catch (e: Exception) {
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
                 // Ignore single file or sub-folder read failures so the rest continues uninterrupted
             }
         }
         val cover = CoverSources.pickFolderCover(images.keys.toList())?.let { images[it] }
-        val coverKey = try {
-            cover?.let { DurationCache.key(documentId(it.uri), it.length(), it.lastModified()) }
-        } catch (_: Exception) { null }
+        val coverUri = cover?.let { DocumentsContract.buildDocumentUriUsingTree(directoryUri, it.documentId) }
+        val coverKey = cover?.let { DurationCache.key(it.documentId, it.sizeBytes, it.lastModified) }
         results.addAll(members.map {
-            it.copy(folderCoverUri = cover?.uri, folderCoverKey = coverKey)
+            it.copy(folderCoverUri = coverUri, folderCoverKey = coverKey)
         })
     }
 
-    /**
-     * Checks whether a DocumentFile is a supported audio file based on MIME type or extension.
-     */
-    private fun isAudioFile(file: DocumentFile): Boolean {
-        val mime = file.type
-        if (mime != null && mime.startsWith("audio/")) {
-            return true
+    /** One query for all children of a folder; null when the folder can't be read. */
+    private fun queryChildren(directoryUri: Uri): List<FolderEntry>? {
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(directoryUri,
+            DocumentsContract.getDocumentId(directoryUri))
+        val cursor = context.contentResolver.query(childrenUri, FolderEntry.PROJECTION, null, null, null)
+            ?: return null
+        return cursor.use {
+            val id = it.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+            if (id < 0) return null
+            val name = it.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+            val mime = it.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+            val size = it.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+            val modified = it.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+            val entries = mutableListOf<FolderEntry>()
+            while (it.moveToNext()) {
+                val documentId = it.getString(id) ?: continue
+                entries.add(FolderEntry(documentId, it.stringOrNull(name), it.stringOrNull(mime),
+                    it.longOrZero(size), it.longOrZero(modified)))
+            }
+            entries
         }
-        val name = file.name?.lowercase(Locale.ROOT) ?: return false
-        val extension = name.substringAfterLast('.', "")
-        return extension in supportedExtensions
     }
+
+    private fun Cursor.stringOrNull(index: Int): String? = if (index < 0 || isNull(index)) null else getString(index)
+    private fun Cursor.longOrZero(index: Int): Long = if (index < 0 || isNull(index)) 0L else getLong(index)
 
     private fun documentId(uri: Uri): String = try {
         DocumentsContract.getDocumentId(uri)
