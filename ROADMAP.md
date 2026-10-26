@@ -37,8 +37,8 @@ unit tests, lint and a debug APK) passes before it is merged. Sizes: **S** = an 
 
 | # | What | Why it matters | Size |
 |---|------|----------------|------|
-| 3.1 | Decide whether the countdown should **pause while playback is paused** (most audiobook apps do). If yes, freeze the remaining time on pause and continue on play. | Pausing for a phone call shouldn't use up the timer. | S |
-| 3.2 | Small fixes: after **+5 min** the remaining time is rounded down for one tick; the countdown text uses the phone's locale for digits without saying so. | Cosmetic. | S |
+| 3.1 | ~~Decide whether the countdown should **pause while playback is paused**~~ **Done:** the remaining time freezes on pause and continues on play; a timer set while paused starts counting when playback starts. | Pausing for a phone call shouldn't use up the timer. | S |
+| 3.2 | ~~Small fixes~~ **Done:** **+5 min** now rounds the same way as the regular countdown; the countdown text uses the phone's digits on purpose, matching the book times. | Cosmetic. | S |
 | 3.3 | Optional: **shake to extend** in the last minute. | Common request for bedtime listening. | M |
 
 ## 4. Getting ready for Google Play (only if you want to publish there)
