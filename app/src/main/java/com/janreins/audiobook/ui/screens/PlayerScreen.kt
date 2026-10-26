@@ -600,7 +600,9 @@ fun PlayerScreen(
             bookmarks = bookmarks,
             onDismiss = { showBookmarksSheet = false },
             onSelectBookmark = onSelectBookmark,
-            onDeleteBookmark = onDeleteBookmark
+            onDeleteBookmark = onDeleteBookmark,
+            book = audiobook,
+            chapters = chapters
         )
     }
 

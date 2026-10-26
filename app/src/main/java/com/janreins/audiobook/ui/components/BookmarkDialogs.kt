@@ -45,7 +45,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.janreins.audiobook.data.AudiobookRepository
+import com.janreins.audiobook.data.model.Audiobook
 import com.janreins.audiobook.data.model.Bookmark
+import com.janreins.audiobook.player.BookmarkPlace
+import com.janreins.audiobook.player.ChapterIndex
 
 /**
  * Dialog allowing the user to add a bookmark at the playback timestamp when it was opened.
@@ -137,7 +140,9 @@ fun BookmarkBottomSheet(
     bookmarks: List<Bookmark>,
     onDismiss: () -> Unit,
     onSelectBookmark: (Bookmark) -> Unit,
-    onDeleteBookmark: (Bookmark) -> Unit
+    onDeleteBookmark: (Bookmark) -> Unit,
+    book: Audiobook? = null,
+    chapters: ChapterIndex? = null
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -213,6 +218,7 @@ fun BookmarkBottomSheet(
                     items(bookmarks, key = { it.id }) { bookmark ->
                         BookmarkItemCard(
                             bookmark = bookmark,
+                            place = BookmarkPlace.of(bookmark, book, chapters),
                             onJumpTo = {
                                 onSelectBookmark(bookmark)
                                 onDismiss()
@@ -229,11 +235,12 @@ fun BookmarkBottomSheet(
 @Composable
 private fun BookmarkItemCard(
     bookmark: Bookmark,
+    place: BookmarkPlace,
     onJumpTo: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val formattedTime = remember(bookmark.positionMs) {
-        AudiobookRepository.formatDuration(bookmark.positionMs)
+    val formattedTime = remember(place.bookPositionMs) {
+        AudiobookRepository.formatDuration(place.bookPositionMs)
     }
 
     Card(
@@ -278,6 +285,15 @@ private fun BookmarkItemCard(
                     overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.onSurface
                 )
+                place.chapterOrFile?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             IconButton(
