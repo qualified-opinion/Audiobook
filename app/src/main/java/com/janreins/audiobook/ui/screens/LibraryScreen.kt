@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -109,11 +110,14 @@ fun LibraryScreen(
     onMarkFinished: (Audiobook) -> Unit = {},
     onMarkUnplayed: (Audiobook) -> Unit = {},
     message: String? = null,
-    onDismissMessage: () -> Unit = {}
+    onDismissMessage: () -> Unit = {},
+    onBackupClick: () -> Unit = {},
+    onRestoreClick: () -> Unit = {}
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var showThemeDialog by remember { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
+    var showMoreMenu by remember { mutableStateOf(false) }
 
     if (showThemeDialog) {
         ThemeSelectionDialog(
@@ -203,6 +207,24 @@ fun LibraryScreen(
                             contentDescription = "Change Folder",
                             tint = MaterialTheme.colorScheme.onSurface
                         )
+                    }
+                    Box {
+                        IconButton(
+                            onClick = { showMoreMenu = true },
+                            modifier = Modifier.testTag("library_more_button")
+                        ) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                        }
+                        DropdownMenu(expanded = showMoreMenu, onDismissRequest = { showMoreMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Back up progress & bookmarks") },
+                                onClick = { showMoreMenu = false; onBackupClick() }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Restore from backup") },
+                                onClick = { showMoreMenu = false; onRestoreClick() }
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

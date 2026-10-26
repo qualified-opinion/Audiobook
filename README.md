@@ -52,6 +52,7 @@ The workflow needs four repository secrets: `RELEASE_KEYSTORE_BASE64` (the keyst
    - After an app restart, the last book appears paused immediately. Headset/Bluetooth Play can resume it after process death, using the latest saved position (saved on pause, seek, and every five seconds). Finished books restart in one press, including after marking them finished.
    - Folder access and the starting track are checked before cold playback; unavailable books stay paused until access is restored.
    - Stored 100% privately on your device using Android SharedPreferences and a local last-book snapshot.
+   - **Backup and restore**: the library's ⋮ menu saves progress, finished flags and bookmarks to a JSON file you choose, and restores them from one (for example after reinstalling or on a new phone, once the audiobook folder is chosen). Books are matched by folder and file names, so a library moved to an SD card is still found. A restore never moves a book back from a position this phone played more recently, and adds bookmarks without removing any.
 
 6. **Background Playback & Media3 Media Controls**
    - Background playback with notification and lock-screen controls for play/pause, configured skip intervals and chapter navigation (or -1m/+1m when there is only one chapter; button visibility depends on Android/device).
@@ -59,7 +60,7 @@ The workflow needs four repository secrets: `RELEASE_KEYSTORE_BASE64` (the keyst
 
 7. **100% Private & Pure Offline**
    - Zero internet permissions in the Android Manifest.
-   - App data is not included in Android cloud backup; folder access grants are device-specific.
+   - App data is not included in Android cloud backup; folder access grants are device-specific. Use Backup and restore (above) to move listening data yourself.
    - No tracking, no analytics, no accounts, and no cloud dependencies.
    - Light, dark, and system-adaptive Material Design 3 themes.
 
