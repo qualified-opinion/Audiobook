@@ -94,6 +94,14 @@ fun AudiobookApp(
     }
 
     // Android 13+ Notification Permission Launcher
+    val backupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri -> if (uri != null) viewModel.exportListeningData(uri) }
+
+    val restoreLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri -> if (uri != null) viewModel.importListeningData(uri) }
+
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { /* Permission granted or denied handled gracefully */ }
@@ -155,7 +163,10 @@ fun AudiobookApp(
                     onMiniPlayerClick = { viewModel.openPlayer() },
                     onTogglePlayPause = { viewModel.togglePlayPause(context) },
                     onChangeFolderClick = { folderPickerLauncher.launch(null) },
-                    onRefresh = { viewModel.loadAudiobooks() }
+                    onRefresh = { viewModel.loadAudiobooks() },
+                    onBackupClick = { backupLauncher.launch("audiobook-backup-${java.time.LocalDate.now()}.json") },
+                    // Some file managers label .json files as text or plain binary.
+                    onRestoreClick = { restoreLauncher.launch(arrayOf("application/json", "text/*", "application/octet-stream")) }
                 )
             }
 

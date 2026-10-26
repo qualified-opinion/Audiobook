@@ -21,7 +21,7 @@ unit tests, lint and a debug APK) passes before it is merged. Sizes: **S** = an 
 
 | # | What | Why it matters | Size |
 |---|------|----------------|------|
-| 1.1 | **Export and import progress and bookmarks** to a file the user picks (JSON through the system file picker; still no internet). | Cloud backup is off on purpose (`allowBackup="false"`), so uninstalling the app or changing phones loses every saved position and bookmark today. | M |
+| 1.1 | ~~**Export and import progress and bookmarks**~~ **Done:** library ⋮ menu → *Back up progress & bookmarks* / *Restore from backup* (JSON file through the system file picker; still no internet). | Cloud backup is off on purpose (`allowBackup="false"`), so uninstalling the app or changing phones lost every saved position and bookmark. | M |
 | 1.2 | **Changing folder while a book is playing**: check what happens. Choosing a new folder releases access to the old one, so the next file of the playing book may fail with "Unable to play audio file". Either keep the old grant until playback moves on, or stop playback with a clear message. *Needs a check on a phone.* | Avoids a confusing error after switching libraries. | S |
 
 ## 2. Speed and polish for bigger libraries

@@ -15,6 +15,8 @@ import com.janreins.audiobook.data.BookStatus
 import com.janreins.audiobook.data.LibraryStateStore
 import com.janreins.audiobook.data.LibrarySort
 import com.janreins.audiobook.data.LibraryFilter
+import com.janreins.audiobook.data.ListeningBackup
+import com.janreins.audiobook.data.ListeningBackupStore
 import com.janreins.audiobook.data.model.BookProgress
 import com.janreins.audiobook.data.ResumeSnapshotStore
 import com.janreins.audiobook.data.ProgressMigration
@@ -25,10 +27,12 @@ import com.janreins.audiobook.data.model.SleepTimerOption
 import com.janreins.audiobook.player.BookChapter
 import com.janreins.audiobook.player.AudiobookPlayerManager
 import com.janreins.audiobook.ui.theme.AppThemeMode
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Screen destinations for the single-activity navigation flow.
@@ -341,6 +345,49 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return book.tracks.take(index).sumOf { it.durationMs } + progress.positionMs
     }
 
+    /** Writes progress, finished flags and bookmarks to [uri], a file the user created in the system picker. */
+    fun exportListeningData(uri: Uri) {
+        val app = getApplication<Application>()
+        AudiobookPlayerManager.saveCurrentPosition()
+        val backup = ListeningBackupStore(app).export(_audiobooks.value)
+        viewModelScope.launch {
+            val saved = withContext(Dispatchers.IO) {
+                runCatching {
+                    app.contentResolver.openOutputStream(uri, "w")!!.use { it.write(backup.toJson().toByteArray(Charsets.UTF_8)) }
+                }.onFailure { Log.w("MainViewModel", "Backup failed", it) }.isSuccess
+            }
+            _folderMessage.value = if (saved) "Backup saved: progress and bookmarks for ${books(backup.books.size)}."
+                else "Could not save the backup file. Please try another location."
+        }
+    }
+
+    /** Reads a backup made by [exportListeningData] and merges it into this phone's listening data. */
+    fun importListeningData(uri: Uri) {
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            val backup = withContext(Dispatchers.IO) {
+                runCatching {
+                    app.contentResolver.openInputStream(uri)!!.use { input ->
+                        val bytes = input.readNBytesCompat(MAX_BACKUP_BYTES + 1)
+                        if (bytes.size > MAX_BACKUP_BYTES) null else ListeningBackup.fromJson(bytes.toString(Charsets.UTF_8))
+                    }
+                }.getOrNull()
+            }
+            if (backup == null) {
+                _folderMessage.value = "This file isn't an Audiobook backup, so nothing was restored."
+                return@launch
+            }
+            AudiobookPlayerManager.saveCurrentPosition()
+            val summary = ListeningBackupStore(app).restore(backup, _audiobooks.value,
+                AudiobookPlayerManager::applyStoredProgress)
+            AudiobookPlayerManager.currentBook.value?.let { _currentBookmarks.value = prefs.getBookmarks(it.id) }
+            _folderMessage.value = "Restored ${books(summary.restored)}." + if (summary.notInLibrary > 0)
+                " ${books(summary.notInLibrary).replaceFirstChar { it.uppercase() }} from the backup aren't in this folder." else ""
+        }
+    }
+
+    private fun books(count: Int) = if (count == 1) "1 book" else "$count books"
+
     fun dismissFolderMessage() { _folderMessage.value = null }
 
     fun dismissError() {
@@ -351,4 +398,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _themeMode.value = mode
         prefs.saveThemeMode(mode)
     }
+
+    private companion object {
+        const val MAX_BACKUP_BYTES = 5 * 1024 * 1024
+    }
+}
+
+/** InputStream.readNBytes needs API 33; minSdk is 26. */
+private fun java.io.InputStream.readNBytesCompat(limit: Int): ByteArray {
+    val out = java.io.ByteArrayOutputStream()
+    val buffer = ByteArray(8192)
+    while (out.size() < limit) {
+        val read = read(buffer, 0, minOf(buffer.size, limit - out.size()))
+        if (read < 0) break
+        out.write(buffer, 0, read)
+    }
+    return out.toByteArray()
 }
