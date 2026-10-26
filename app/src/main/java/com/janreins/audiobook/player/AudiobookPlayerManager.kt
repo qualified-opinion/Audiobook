@@ -52,7 +52,7 @@ object AudiobookPlayerManager {
     private var positionTrackerJob: Job? = null
     private var sleepTimerJob: Job? = null
     private var lastSleepVolume = 1f
-    private var sleepDeadlineMs: Long? = null
+    private var sleepCountdown: SleepCountdown? = null
     private var applyingFinished = false
     private val knownBooks = mutableMapOf<String, Audiobook>()
 
@@ -103,6 +103,8 @@ object AudiobookPlayerManager {
                 // Listening again (e.g. from the notification after the end) means it is no longer finished.
                 if (libraryStateStore?.isFinished(book.id) == true) libraryStateStore?.setFinished(book.id, false)
             }
+            // The sleep countdown only runs while audio plays, so a pause doesn't use up the timer.
+            sleepCountdown?.let { if (isPlaying) it.resume(SystemClock.elapsedRealtime()) else it.pause(SystemClock.elapsedRealtime()) }
             if (isPlaying) startPositionTracker() else {
                 positionTrackerJob?.cancel()
                 saveCurrentPosition()
@@ -478,7 +480,7 @@ object AudiobookPlayerManager {
     private fun cancelSleepTimerLocally() {
         sleepTimerJob?.cancel()
         sleepTimerJob = null
-        sleepDeadlineMs = null
+        sleepCountdown = null
         lastSleepVolume = 1f
         _activeSleepOption.value = SleepTimerOption.OFF
         _sleepTimerRemainingSeconds.value = null
@@ -488,7 +490,7 @@ object AudiobookPlayerManager {
         if (context != null) initialize(context)
         sleepTimerJob?.cancel()
         sleepTimerJob = null
-        sleepDeadlineMs = null
+        sleepCountdown = null
         _activeSleepOption.value = option
         _sleepTimerRemainingSeconds.value = null
         lastSleepVolume = 1f
@@ -499,16 +501,18 @@ object AudiobookPlayerManager {
             })
         }
         if (option.minutes <= 0) return
-        sleepDeadlineMs = SystemClock.elapsedRealtime() + option.minutes * 60_000L
+        // Set while paused, the timer waits and starts counting once playback starts.
+        val countdown = SleepCountdown(option.minutes * 60_000L, SystemClock.elapsedRealtime(), _isPlaying.value)
+        sleepCountdown = countdown
         sleepTimerJob = scope.launch {
             while (isActive) {
-                val remainingMs = ((sleepDeadlineMs ?: break) - SystemClock.elapsedRealtime()).coerceAtLeast(0L)
-                _sleepTimerRemainingSeconds.value = ((remainingMs + 999L) / 1000L).toInt()
+                val remainingMs = countdown.remainingMs(SystemClock.elapsedRealtime())
+                _sleepTimerRemainingSeconds.value = SleepCountdown.displaySeconds(remainingMs)
                 if (remainingMs == 0L) {
+                    sleepCountdown = null
                     pause()
                     lastSleepVolume = 1f
                     withController { it.volume = 1f }
-                    sleepDeadlineMs = null
                     _activeSleepOption.value = SleepTimerOption.OFF
                     _sleepTimerRemainingSeconds.value = null
                     break
@@ -524,10 +528,9 @@ object AudiobookPlayerManager {
     }
 
     fun extendSleepTimer() {
-        val deadline = sleepDeadlineMs ?: return
-        sleepDeadlineMs = deadline + 300_000L
-        _sleepTimerRemainingSeconds.value =
-            ((deadline + 300_000L - SystemClock.elapsedRealtime()).coerceAtLeast(0L) / 1000L).toInt()
+        val countdown = sleepCountdown ?: return
+        countdown.extend(300_000L)
+        _sleepTimerRemainingSeconds.value = SleepCountdown.displaySeconds(countdown.remainingMs(SystemClock.elapsedRealtime()))
         lastSleepVolume = 1f
         withController { it.volume = 1f }
     }
@@ -646,6 +649,7 @@ object AudiobookPlayerManager {
         }
         sleepTimerJob?.cancel()
         sleepTimerJob = null
+        sleepCountdown = null
         _activeSleepOption.value = SleepTimerOption.OFF
         _sleepTimerRemainingSeconds.value = null
     }

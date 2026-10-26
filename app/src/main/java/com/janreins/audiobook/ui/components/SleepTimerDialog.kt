@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.janreins.audiobook.data.model.SleepTimerOption
+import com.janreins.audiobook.player.SleepCountdown
 
 /**
  * Dialog for configuring the audiobook sleep timer in Clean Minimalism aesthetic.
@@ -58,9 +59,7 @@ fun SleepTimerDialog(
         text = {
             Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                 if (remainingSeconds != null && remainingSeconds > 0) {
-                    val minutes = remainingSeconds / 60
-                    val seconds = remainingSeconds % 60
-                    val countdownStr = String.format("%02d:%02d", minutes, seconds)
+                    val countdownStr = SleepCountdown.format(remainingSeconds)
                     Text(
                         text = "Audiobook will pause in: $countdownStr",
                         style = MaterialTheme.typography.bodyMedium,
