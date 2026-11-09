@@ -7,9 +7,9 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 
 enum class AppThemeMode(val title: String, val description: String) {
-    SYSTEM("System Default", "Follows device system settings"),
-    LIGHT("Light Theme", "Crisp light background with ocean cobalt accents"),
-    DARK("Dark Theme", "Deep dark canvas easy on the eyes")
+    SYSTEM("System default", "Matches your phone's light or dark setting"),
+    LIGHT("Light", "Light background with blue accents"),
+    DARK("Dark", "Dark background, easier on the eyes at night")
 }
 
 private val DarkColorScheme = darkColorScheme(

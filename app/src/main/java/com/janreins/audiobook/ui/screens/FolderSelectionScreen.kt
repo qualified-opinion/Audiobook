@@ -90,7 +90,7 @@ fun FolderSelectionScreen(
                     AppThemeMode.DARK -> Icons.Default.DarkMode
                     AppThemeMode.SYSTEM -> Icons.Default.BrightnessAuto
                 },
-                contentDescription = "Theme Options",
+                contentDescription = "Change theme",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -98,7 +98,9 @@ fun FolderSelectionScreen(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(rememberScrollState())
+                // Keep the content clear of the theme button on short screens.
+                .padding(top = 48.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
@@ -138,7 +140,7 @@ fun FolderSelectionScreen(
             Spacer(modifier = Modifier.height(10.dp))
 
             Text(
-                text = "Select any local folder on your phone containing your audiobook files (MP3, M4A, AAC, etc.). Sub-folders are automatically scanned.",
+                text = "Choose the folder on your phone that holds your audiobooks (MP3, M4A, M4B, AAC and more). Sub-folders are included automatically.",
                 style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -172,7 +174,7 @@ fun FolderSelectionScreen(
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = "Choose Audiobook Folder",
+                    text = "Choose audiobook folder",
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.SemiBold
                     )
@@ -206,7 +208,7 @@ fun FolderSelectionScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "100% Private & Pure Offline",
+                            text = "Private and fully offline",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -216,7 +218,7 @@ fun FolderSelectionScreen(
                     Spacer(modifier = Modifier.height(10.dp))
 
                     Text(
-                        text = "• Zero internet permission\n• No accounts, analytics, or tracking\n• Automatic sub-folder scanning into flat library\n• All playback bookmarks stay locally on your device",
+                        text = "• No internet access at all\n• No accounts, analytics or tracking\n• Books in sub-folders appear in one library\n• Progress and bookmarks stay on your phone",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         lineHeight = 22.sp

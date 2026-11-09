@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -68,6 +69,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -162,29 +168,22 @@ fun PlayerScreen(
                                 letterSpacing = 1.8.sp,
                                 fontWeight = FontWeight.SemiBold
                             ),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 },
                 navigationIcon = {
-                    Surface(
+                    IconButton(
+                        onClick = onBackClick,
                         modifier = Modifier
-                            .padding(start = 12.dp)
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .clickable(onClick = onBackClick)
-                            .testTag("player_back_button"),
-                        shape = CircleShape,
-                        color = Color.Transparent
+                            .padding(start = 4.dp)
+                            .testTag("player_back_button")
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back to library",
-                                tint = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back to library",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
                     }
                 },
                 actions = {
@@ -202,49 +201,42 @@ fun PlayerScreen(
                                 AppThemeMode.DARK -> Icons.Default.DarkMode
                                 AppThemeMode.SYSTEM -> Icons.Default.BrightnessAuto
                             },
-                            contentDescription = "Change Theme",
+                            contentDescription = "Change theme",
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
 
-                    // Right Bookmark quick access button
-                    Surface(
+                    // Bookmarks list, with the number of saved bookmarks as a badge
+                    IconButton(
+                        onClick = { showBookmarksSheet = true },
                         modifier = Modifier
-                            .padding(end = 8.dp)
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .clickable { showBookmarksSheet = true }
-                            .testTag("view_bookmarks_button"),
-                        shape = CircleShape,
-                        color = Color.Transparent
+                            .padding(end = 4.dp)
+                            .testTag("view_bookmarks_button")
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            if (bookmarks.isNotEmpty()) {
-                                BadgedBox(
-                                    badge = {
-                                        Badge(
-                                            containerColor = MaterialTheme.colorScheme.primary,
-                                            contentColor = MaterialTheme.colorScheme.onPrimary
-                                        ) {
-                                            Text("${bookmarks.size}")
-                                        }
+                        BadgedBox(
+                            badge = {
+                                if (bookmarks.isNotEmpty()) {
+                                    Badge(
+                                        containerColor = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary
+                                    ) {
+                                        Text("${bookmarks.size}")
                                     }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Bookmarks,
-                                        contentDescription = "View Bookmarks",
-                                        tint = MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.size(22.dp)
-                                    )
                                 }
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Default.Bookmarks,
-                                    contentDescription = "View Bookmarks",
-                                    tint = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.size(22.dp)
-                                )
+                            },
+                            modifier = Modifier.clearAndSetSemantics {
+                                contentDescription = when (bookmarks.size) {
+                                    0 -> "Bookmarks"
+                                    1 -> "Bookmarks, 1 saved"
+                                    else -> "Bookmarks, ${bookmarks.size} saved"
+                                }
                             }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Bookmarks,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
                         }
                     }
                 },
@@ -292,14 +284,11 @@ fun PlayerScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = errorMessage ?: "",
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onErrorContainer
                             )
                         }
-                        IconButton(
-                            onClick = onDismissError,
-                            modifier = Modifier.size(24.dp)
-                        ) {
+                        IconButton(onClick = onDismissError) {
                             Icon(
                                 imageVector = Icons.Default.Close,
                                 contentDescription = "Dismiss error",
@@ -409,7 +398,9 @@ fun PlayerScreen(
 
             Spacer(modifier = Modifier.height(28.dp))
 
-            // Footer Action Dock: Rounded 24dp Pill with Speed, Timer, Mark
+            // Footer Action Dock: Rounded 24dp Pill with Speed, Timer, Bookmark
+            val timerMinutesLeft = sleepTimerRemainingSeconds?.takeIf { it > 0 }?.let { (it + 59) / 60 }
+            val timerActive = timerMinutesLeft != null || activeSleepOption == SleepTimerOption.END_OF_TRACK
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -424,129 +415,71 @@ fun PlayerScreen(
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Item 1: SPEED
-                    Box(modifier = Modifier.weight(1f)) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(16.dp))
-                                .clickable { showSpeedMenu = true }
-                                .padding(vertical = 8.dp)
-                                .testTag("speed_selector_button"),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Text(
-                                text = SpeedSteps.format(playbackSpeed),
-                                style = MaterialTheme.typography.bodyMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                ),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "SPEED",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    letterSpacing = 0.5.sp
-                                ),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                            )
-                        }
+                    DockItem(
+                        label = "SPEED",
+                        spokenLabel = "Playback speed, ${SpeedSteps.format(playbackSpeed)}",
+                        testTag = "speed_selector_button",
+                        onClick = { showSpeedMenu = true }
+                    ) {
+                        Text(
+                            text = SpeedSteps.format(playbackSpeed),
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
 
-                    // Vertical Divider
-                    Box(
-                        modifier = Modifier
-                            .width(1.dp)
-                            .height(24.dp)
-                            .background(MaterialTheme.colorScheme.outlineVariant)
-                    )
+                    DockDivider()
 
-                    // Item 2: TIMER
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(16.dp))
-                            .clickable { showSleepTimerDialog = true }
-                            .padding(vertical = 8.dp)
-                            .testTag("quick_sleep_timer_button"),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
+                    DockItem(
+                        label = "TIMER",
+                        spokenLabel = when {
+                            timerMinutesLeft != null -> "Sleep timer, $timerMinutesLeft min left"
+                            activeSleepOption == SleepTimerOption.END_OF_TRACK -> "Sleep timer, end of track"
+                            else -> "Sleep timer, off"
+                        },
+                        highlighted = timerActive,
+                        testTag = "quick_sleep_timer_button",
+                        onClick = { showSleepTimerDialog = true }
                     ) {
-                        if (sleepTimerRemainingSeconds != null && sleepTimerRemainingSeconds > 0) {
-                            val mins = (sleepTimerRemainingSeconds + 59) / 60
-                            Text(
-                                text = "${mins}m",
+                        when {
+                            timerMinutesLeft != null -> Text(
+                                text = "${timerMinutesLeft}m",
                                 style = MaterialTheme.typography.bodyMedium.copy(
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 13.sp
                                 ),
                                 color = MaterialTheme.colorScheme.primary
                             )
-                        } else if (activeSleepOption == SleepTimerOption.END_OF_TRACK) {
-                            Text("End of track", style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary)
-                        } else {
-                            Icon(
+                            activeSleepOption == SleepTimerOption.END_OF_TRACK -> Text(
+                                text = "End of track",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            else -> Icon(
                                 imageVector = Icons.Default.Bedtime,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "TIMER",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Medium,
-                                letterSpacing = 0.5.sp
-                            ),
-                            color = if (sleepTimerRemainingSeconds != null && sleepTimerRemainingSeconds > 0) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                            }
-                        )
                     }
 
-                    // Vertical Divider
-                    Box(
-                        modifier = Modifier
-                            .width(1.dp)
-                            .height(24.dp)
-                            .background(MaterialTheme.colorScheme.outlineVariant)
-                    )
+                    DockDivider()
 
-                    // Item 3: MARK (Add / View Bookmark)
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(16.dp))
-                            .clickable { showAddBookmarkDialog = true }
-                            .padding(vertical = 8.dp)
-                            .testTag("add_bookmark_button"),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
+                    DockItem(
+                        label = "BOOKMARK",
+                        spokenLabel = "Add bookmark",
+                        testTag = "add_bookmark_button",
+                        onClick = { showAddBookmarkDialog = true }
                     ) {
                         Icon(
                             imageVector = Icons.Default.BookmarkBorder,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "MARK",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Medium,
-                                letterSpacing = 0.5.sp
-                            ),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                         )
                     }
                 }
@@ -572,7 +505,8 @@ fun PlayerScreen(
                     val current = index == currentChapter
                     Row(Modifier.fillMaxWidth()
                         .background(if (current) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
-                        .clickable { onJumpToChapter(chapter); showChapterList = false }
+                        .clickable(onClickLabel = "Play from here") { onJumpToChapter(chapter); showChapterList = false }
+                        .semantics { selected = current }
                         .padding(horizontal = 24.dp, vertical = 16.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Text(chapter.title, modifier = Modifier.weight(1f),
@@ -617,4 +551,55 @@ fun PlayerScreen(
             onExtend = onExtendSleepTimer
         )
     }
+}
+
+/**
+ * One tappable slot of the player's bottom dock: a value or icon on top, a small label below.
+ * Screen readers hear [spokenLabel] (for example "Playback speed, 1.2x") as one button.
+ */
+@Composable
+private fun RowScope.DockItem(
+    label: String,
+    spokenLabel: String,
+    testTag: String,
+    onClick: () -> Unit,
+    highlighted: Boolean = false,
+    content: @Composable () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .weight(1f)
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = spokenLabel }
+            .heightIn(min = 48.dp)
+            .padding(vertical = 8.dp)
+            .testTag(testTag),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        // The visible value and label are already in spokenLabel, so hide them from screen readers.
+        Box(modifier = Modifier.clearAndSetSemantics {}) { content() }
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = label,
+            modifier = Modifier.clearAndSetSemantics {},
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                letterSpacing = 0.5.sp
+            ),
+            color = if (highlighted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun DockDivider() {
+    Box(
+        modifier = Modifier
+            .width(1.dp)
+            .height(24.dp)
+            .background(MaterialTheme.colorScheme.outlineVariant)
+    )
 }

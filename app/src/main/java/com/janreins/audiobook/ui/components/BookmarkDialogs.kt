@@ -60,7 +60,7 @@ fun AddBookmarkDialog(
     onSaveBookmark: (title: String, trackIndex: Int, positionMs: Long) -> Unit,
     currentTrackIndex: Int = 0
 ) {
-    // Playback keeps going while the note is typed: save the spot where MARK was tapped.
+    // Playback keeps going while the note is typed: save the spot where BOOKMARK was tapped.
     val markedTrackIndex = remember { currentTrackIndex }
     val markedPositionMs = remember { currentPositionMs }
     val formattedTime = remember { AudiobookRepository.formatDuration(markedPositionMs) }
@@ -77,7 +77,7 @@ fun AddBookmarkDialog(
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(end = 8.dp)
                 )
-                Text(text = "Add Bookmark")
+                Text(text = "Add bookmark")
             }
         },
         text = {
@@ -91,7 +91,7 @@ fun AddBookmarkDialog(
                 OutlinedTextField(
                     value = titleText,
                     onValueChange = { titleText = it },
-                    label = { Text("Note (Optional)") },
+                    label = { Text("Note (optional)") },
                     placeholder = { Text("e.g. Chapter 4 key clue") },
                     singleLine = true,
                     shape = RoundedCornerShape(16.dp),
@@ -145,6 +145,25 @@ fun BookmarkBottomSheet(
     chapters: ChapterIndex? = null
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // Deleting can't be undone, so a tap on the bin asks first.
+    var pendingDelete by remember { mutableStateOf<Bookmark?>(null) }
+
+    pendingDelete?.let { bookmark ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("Delete bookmark?") },
+            text = { Text("\u201C${bookmark.title}\u201D will be removed. This can't be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = { onDeleteBookmark(bookmark); pendingDelete = null },
+                    modifier = Modifier.testTag("confirm_delete_bookmark_button")
+                ) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) { Text("Cancel") }
+            }
+        )
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -202,9 +221,9 @@ fun BookmarkBottomSheet(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Tap MARK in the player dock to save a spot.",
+                            text = "Tap BOOKMARK below the player controls to save a spot.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -223,7 +242,7 @@ fun BookmarkBottomSheet(
                                 onSelectBookmark(bookmark)
                                 onDismiss()
                             },
-                            onDelete = { onDeleteBookmark(bookmark) }
+                            onDelete = { pendingDelete = bookmark }
                         )
                     }
                 }
@@ -302,7 +321,7 @@ private fun BookmarkItemCard(
             ) {
                 Icon(
                     imageVector = Icons.Default.PlayArrow,
-                    contentDescription = "Jump to bookmark",
+                    contentDescription = "Play from bookmark ${bookmark.title}",
                     tint = MaterialTheme.colorScheme.primary
                 )
             }
@@ -313,8 +332,8 @@ private fun BookmarkItemCard(
             ) {
                 Icon(
                     imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete bookmark",
-                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
+                    contentDescription = "Delete bookmark ${bookmark.title}",
+                    tint = MaterialTheme.colorScheme.error
                 )
             }
         }

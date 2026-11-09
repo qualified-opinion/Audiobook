@@ -1,5 +1,7 @@
 package com.janreins.audiobook.ui.components
 
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -34,13 +36,16 @@ fun PlaybackSpeedDialog(speed: Float, onSetSpeed: (Float) -> Unit, onDismiss: ()
             Column {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { onSetSpeed(SpeedSteps.stepDown(current)) }, enabled = current > SpeedSteps.MIN) { Text("−") }
+                    TextButton(onClick = { onSetSpeed(SpeedSteps.stepDown(current)) }, enabled = current > SpeedSteps.MIN,
+                        modifier = Modifier.semantics { contentDescription = "Slower" }) { Text("−", style = MaterialTheme.typography.titleLarge) }
                     Text(SpeedSteps.format(dragSpeed), style = MaterialTheme.typography.titleLarge)
-                    TextButton(onClick = { onSetSpeed(SpeedSteps.stepUp(current)) }, enabled = current < SpeedSteps.MAX) { Text("+") }
+                    TextButton(onClick = { onSetSpeed(SpeedSteps.stepUp(current)) }, enabled = current < SpeedSteps.MAX,
+                        modifier = Modifier.semantics { contentDescription = "Faster" }) { Text("+", style = MaterialTheme.typography.titleLarge) }
                 }
                 Slider(value = dragSpeed, onValueChange = { dragSpeed = SpeedSteps.snap(it) },
                     onValueChangeFinished = { if (dragSpeed != current) onSetSpeed(dragSpeed) },
-                    valueRange = SpeedSteps.MIN..SpeedSteps.MAX, steps = 49)
+                    valueRange = SpeedSteps.MIN..SpeedSteps.MAX, steps = 49,
+                    modifier = Modifier.semantics { contentDescription = "Playback speed" })
                 listOf(0.8f, 1f, 1.2f, 1.5f, 2f).chunked(3).forEach { presets ->
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         presets.forEach { preset ->
