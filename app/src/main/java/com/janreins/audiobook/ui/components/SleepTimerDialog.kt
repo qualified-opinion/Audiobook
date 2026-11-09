@@ -1,7 +1,8 @@
 package com.janreins.audiobook.ui.components
 
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -53,7 +54,7 @@ fun SleepTimerDialog(
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(end = 8.dp)
                 )
-                Text(text = "Sleep Timer")
+                Text(text = "Sleep timer")
             }
         },
         text = {
@@ -80,7 +81,7 @@ fun SleepTimerDialog(
                     Text("Audiobook will pause at the end of this track.")
                 }
                 if (remainingSeconds != null && remainingSeconds > 0) {
-                    TextButton(onClick = onExtend) { Text("+5 min") }
+                    TextButton(onClick = onExtend) { Text("Add 5 minutes") }
                 }
                 PlaybackSwitch("Fade out in the last 30 seconds", fadeOut, onSetFadeOut)
                 Column(
@@ -93,7 +94,7 @@ fun SleepTimerDialog(
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable {
+                                .selectable(selected = isSelected, role = Role.RadioButton) {
                                     onSelectOption(option)
                                     onDismiss()
                                 }
@@ -133,7 +134,7 @@ fun SleepTimerDialog(
                                 if (isSelected) {
                                     Icon(
                                         imageVector = Icons.Default.Check,
-                                        contentDescription = "Selected",
+                                        contentDescription = null,
                                         tint = MaterialTheme.colorScheme.onPrimaryContainer
                                     )
                                 }

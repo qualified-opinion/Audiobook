@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -82,7 +83,9 @@ fun BookCover(
             text = CoverPlaceholders.initials(book.title),
             style = MaterialTheme.typography.titleLarge,
             fontSize = (minOf(maxWidth, maxHeight).value * 0.34f).sp,
-            color = Color.White
+            color = Color.White,
+            // Placeholder initials are decoration; the book title is read out next to the cover.
+            modifier = Modifier.clearAndSetSemantics {}
         )
         AsyncImage(
             model = model,

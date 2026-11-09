@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BrightnessAuto
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Folder
@@ -41,6 +42,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.IconButton
@@ -173,24 +175,14 @@ fun LibraryScreen(
                             LibrarySort.entries.forEach { option ->
                                 DropdownMenuItem(
                                     text = { Text(option.label()) },
-                                    onClick = { showSortMenu = false; onSortChange(option) }
+                                    onClick = { showSortMenu = false; onSortChange(option) },
+                                    // Show which order is in use now.
+                                    trailingIcon = if (option == sort) {
+                                        { Icon(Icons.Default.Check, contentDescription = "Selected") }
+                                    } else null
                                 )
                             }
                         }
-                    }
-                    IconButton(
-                        onClick = { showThemeDialog = true },
-                        modifier = Modifier.testTag("theme_button_library")
-                    ) {
-                        Icon(
-                            imageVector = when (currentThemeMode) {
-                                AppThemeMode.LIGHT -> Icons.Default.LightMode
-                                AppThemeMode.DARK -> Icons.Default.DarkMode
-                                AppThemeMode.SYSTEM -> Icons.Default.BrightnessAuto
-                            },
-                            contentDescription = "Change Theme",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
                     }
                     IconButton(
                         onClick = onRefresh,
@@ -198,7 +190,7 @@ fun LibraryScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh Library",
+                            contentDescription = "Refresh library",
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
@@ -208,7 +200,7 @@ fun LibraryScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Default.FolderOpen,
-                            contentDescription = "Change Folder",
+                            contentDescription = "Change folder",
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
@@ -220,6 +212,22 @@ fun LibraryScreen(
                             Icon(Icons.Default.MoreVert, contentDescription = "More options")
                         }
                         DropdownMenu(expanded = showMoreMenu, onDismissRequest = { showMoreMenu = false }) {
+                            // Theme lives here so the top bar has room for the title on small phones.
+                            DropdownMenuItem(
+                                text = { Text("App theme") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = when (currentThemeMode) {
+                                            AppThemeMode.LIGHT -> Icons.Default.LightMode
+                                            AppThemeMode.DARK -> Icons.Default.DarkMode
+                                            AppThemeMode.SYSTEM -> Icons.Default.BrightnessAuto
+                                        },
+                                        contentDescription = null
+                                    )
+                                },
+                                onClick = { showMoreMenu = false; showThemeDialog = true },
+                                modifier = Modifier.testTag("theme_button_library")
+                            )
                             DropdownMenuItem(
                                 text = { Text("Back up progress & bookmarks") },
                                 onClick = { showMoreMenu = false; onBackupClick() }
@@ -301,7 +309,7 @@ fun LibraryScreen(
                         }
                         Spacer(modifier = Modifier.height(20.dp))
                         Text(
-                            text = "No Audio Files Found",
+                            text = "No audio files found",
                             style = MaterialTheme.typography.titleLarge.copy(
                                 fontWeight = FontWeight.Bold
                             ),
@@ -325,7 +333,7 @@ fun LibraryScreen(
                         ) {
                             Icon(imageVector = Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Choose Different Folder")
+                            Text("Choose a different folder")
                         }
                     }
                 }
@@ -348,7 +356,7 @@ fun LibraryScreen(
                             OutlinedTextField(
                                 value = searchQuery,
                                 onValueChange = { searchQuery = it },
-                                placeholder = { Text("Filter audiobooks...") },
+                                placeholder = { Text("Search audiobooks") },
                                 leadingIcon = {
                                     Icon(
                                         imageVector = Icons.Default.Search,
@@ -392,7 +400,10 @@ fun LibraryScreen(
                                 FilterChip(
                                     selected = filter == option,
                                     onClick = { onFilterChange(option) },
-                                    label = { Text(option.label()) }
+                                    label = { Text(option.label()) },
+                                    leadingIcon = if (filter == option) {
+                                        { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize)) }
+                                    } else null
                                 )
                             }
                         }
@@ -451,7 +462,7 @@ fun MiniPlayerBar(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onBarClick)
+            .clickable(onClickLabel = "Open player", onClick = onBarClick)
             .testTag("mini_player_bar"),
         color = MaterialTheme.colorScheme.surfaceVariant,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -484,7 +495,7 @@ fun MiniPlayerBar(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = chapterTitle ?: if (isPlaying) "Playing • Tap for player" else "Paused • Tap to resume",
+                    text = chapterTitle ?: if (isPlaying) "Playing" else "Paused",
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,
@@ -495,7 +506,7 @@ fun MiniPlayerBar(
             IconButton(
                 onClick = onTogglePlayPause,
                 modifier = Modifier
-                    .size(42.dp)
+                    .size(48.dp)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.primary)
                     .testTag("mini_player_toggle_button")

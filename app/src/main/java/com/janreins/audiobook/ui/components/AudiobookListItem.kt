@@ -70,7 +70,7 @@ fun AudiobookListItem(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(onClickLabel = "Play", onClick = onClick)
             .testTag("audiobook_item_${audiobook.id.hashCode()}"),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
@@ -172,14 +172,20 @@ fun AudiobookListItem(
                     Icon(Icons.Default.MoreVert, contentDescription = "Options for ${audiobook.title}")
                 }
                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                    DropdownMenuItem(
-                        text = { Text("Mark as finished") },
-                        onClick = { showMenu = false; onMarkFinished() }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Mark as unplayed") },
-                        onClick = { showMenu = false; onMarkUnplayed() }
-                    )
+                    // Only offer what would change something: a finished book can't be
+                    // finished again, and a book never started is already unplayed.
+                    if (!finished) {
+                        DropdownMenuItem(
+                            text = { Text("Mark as finished") },
+                            onClick = { showMenu = false; onMarkFinished() }
+                        )
+                    }
+                    if (finished || savedPositionMs > 0) {
+                        DropdownMenuItem(
+                            text = { Text("Mark as unplayed") },
+                            onClick = { showMenu = false; onMarkUnplayed() }
+                        )
+                    }
                 }
             }
 
@@ -197,7 +203,8 @@ fun AudiobookListItem(
                 ) {
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "Play audiobook",
+                        // Decorative: tapping anywhere on the card plays the book.
+                        contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(22.dp)
                     )

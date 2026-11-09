@@ -1,5 +1,8 @@
 package com.janreins.audiobook.ui.components
 
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -62,8 +65,16 @@ private fun IntervalOptions(label: String, seconds: Int, onSelect: (Int) -> Unit
 
 @Composable
 internal fun PlaybackSwitch(label: String, enabled: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    // The whole row is the switch, so tapping the text works too and screen readers hear one control.
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .toggleable(value = enabled, role = Role.Switch, onValueChange = onChange)
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         Text(label, modifier = Modifier.weight(1f))
-        Switch(checked = enabled, onCheckedChange = onChange)
+        Switch(checked = enabled, onCheckedChange = null)
     }
 }
