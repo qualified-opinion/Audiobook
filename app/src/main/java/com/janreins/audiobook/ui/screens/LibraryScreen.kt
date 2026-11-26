@@ -24,6 +24,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Folder
@@ -74,6 +76,11 @@ import com.janreins.audiobook.data.model.Audiobook
 import com.janreins.audiobook.data.BookStatus
 import com.janreins.audiobook.data.LibrarySort
 import com.janreins.audiobook.data.LibraryFilter
+import com.janreins.audiobook.data.LibraryView
+import com.janreins.audiobook.data.ShelfLayout
+import com.janreins.audiobook.ui.components.Bookshelf
+import com.janreins.audiobook.ui.components.SpineState
+import com.janreins.audiobook.ui.components.shelfColors
 import com.janreins.audiobook.data.LibrarySorting
 import com.janreins.audiobook.ui.components.BookCover
 import com.janreins.audiobook.ui.components.AudiobookListItem
@@ -118,7 +125,9 @@ fun LibraryScreen(
     onRestoreClick: () -> Unit = {},
     scannedFileCount: Int = 0,
     /** Live position in the whole playing book, so its row updates while it plays. */
-    playingBookPositionMs: Long? = null
+    playingBookPositionMs: Long? = null,
+    view: LibraryView = LibraryView.LIST,
+    onViewChange: (LibraryView) -> Unit = {}
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var showThemeDialog by remember { mutableStateOf(false) }
@@ -133,9 +142,17 @@ fun LibraryScreen(
         )
     }
 
-    val filteredAudiobooks = remember(audiobooks, searchQuery, sort, filter, libraryVersion, statusOf) {
-        LibrarySorting.apply(audiobooks, statusOf, sort, filter, searchQuery)
+    val onShelves = view == LibraryView.SHELVES
+    // On the bookshelf the shelves already split books by status, so the filter chips are hidden and ignored.
+    val activeFilter = if (onShelves) LibraryFilter.ALL else filter
+    val filteredAudiobooks = remember(audiobooks, searchQuery, sort, activeFilter, libraryVersion, statusOf) {
+        LibrarySorting.apply(audiobooks, statusOf, sort, activeFilter, searchQuery)
     }
+    val shelfSections = remember(filteredAudiobooks, statusOf, libraryVersion, onShelves) {
+        if (onShelves) ShelfLayout.group(filteredAudiobooks, statusOf) else emptyList()
+    }
+    val shelfColors = shelfColors()
+    val screenBackground = if (onShelves) shelfColors.wall else MaterialTheme.colorScheme.background
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -229,6 +246,20 @@ fun LibraryScreen(
                                 modifier = Modifier.testTag("theme_button_library")
                             )
                             DropdownMenuItem(
+                                text = { Text(if (onShelves) "Show as list" else "Show as bookshelf") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = if (onShelves) Icons.AutoMirrored.Filled.ViewList else Icons.Default.ViewModule,
+                                        contentDescription = null
+                                    )
+                                },
+                                onClick = {
+                                    showMoreMenu = false
+                                    onViewChange(if (onShelves) LibraryView.LIST else LibraryView.SHELVES)
+                                },
+                                modifier = Modifier.testTag("library_view_toggle")
+                            )
+                            DropdownMenuItem(
                                 text = { Text("Back up progress & bookmarks") },
                                 onClick = { showMoreMenu = false; onBackupClick() }
                             )
@@ -240,7 +271,7 @@ fun LibraryScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
+                    containerColor = screenBackground
                 )
             )
         },
@@ -261,7 +292,7 @@ fun LibraryScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .background(MaterialTheme.colorScheme.background)
+                .background(screenBackground)
         ) {
             when {
                 // First scan of a folder: nothing to show yet. A rescan keeps the list (below).
@@ -389,7 +420,7 @@ fun LibraryScreen(
                             )
                         }
 
-                        Row(
+                        if (!onShelves) Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .horizontalScroll(rememberScrollState())
@@ -415,8 +446,25 @@ fun LibraryScreen(
                             )
                         }
 
-                        // Audiobooks List
-                        LazyColumn(
+                        if (onShelves) {
+                            Bookshelf(
+                                sections = shelfSections,
+                                stateOf = { book ->
+                                    val status = statusOf(book)
+                                    val live = playingBookPositionMs
+                                        ?.takeIf { book.id == currentPlayingBook?.id && book.durationMs > 0 }
+                                        ?.let { (it.toFloat() / book.durationMs).coerceIn(0f, 1f) }
+                                    val progress = if (status.finished) 1f else live ?: status.progressFraction
+                                    SpineState(progress, status.started || progress > 0f, status.finished)
+                                },
+                                currentBookId = currentPlayingBook?.id,
+                                isPlaying = isPlaying,
+                                onBookClick = onBookClick,
+                                onMarkFinished = onMarkFinished,
+                                onMarkUnplayed = onMarkUnplayed,
+                                colors = shelfColors
+                            )
+                        } else LazyColumn(
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(
                                 start = 16.dp,
