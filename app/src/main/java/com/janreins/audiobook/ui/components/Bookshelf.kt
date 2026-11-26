@@ -289,8 +289,9 @@ fun FaceOutBook(
             modifier = Modifier
                 .size(DisplayCoverSize)
                 .shadow(6.dp, RoundedCornerShape(3.dp))
-                .shelfBookActions(book, state, isCurrent, isPlaying, onClick, onMarkFinished, onMarkUnplayed) { showMenu = true }
+                // Tag before shelfBookActions: its clearAndSetSemantics hides anything set after it.
                 .testTag("book_face_${book.id.hashCode()}")
+                .shelfBookActions(book, state, isCurrent, isPlaying, onClick, onMarkFinished, onMarkUnplayed) { showMenu = true }
         ) {
             BookCover(book = book, modifier = Modifier.fillMaxSize(), cornerRadius = 3.dp, showPlayingOverlay = isCurrent)
             if (state.progress > 0f && !state.finished) {
@@ -380,8 +381,8 @@ fun BookSpine(
                         1f to lerp(base, Color.Black, 0.28f)
                     )
                 )
-                .shelfBookActions(book, state, isCurrent, isPlaying, onClick, onMarkFinished, onMarkUnplayed) { showMenu = true }
                 .testTag("book_spine_${book.id.hashCode()}")
+                .shelfBookActions(book, state, isCurrent, isPlaying, onClick, onMarkFinished, onMarkUnplayed) { showMenu = true }
         ) {
             SpineBandLine(Modifier.align(Alignment.TopCenter).padding(top = 10.dp))
             SpineBandLine(Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp))
