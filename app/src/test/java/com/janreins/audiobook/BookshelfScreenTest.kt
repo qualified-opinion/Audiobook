@@ -74,11 +74,27 @@ class BookshelfScreenTest {
         composeTestRule.onNodeWithContentDescription("Glass Orchard, not started").assertIsDisplayed()
     }
 
-    @Test fun tappingASpinePlaysThatBook() {
+    @Test fun booksBeingListenedToStandFaceOutAndTheRestAreSpines() {
+        show()
+        composeTestRule.onNodeWithTag("display_shelf").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("book_face_${books[1].id.hashCode()}").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("book_spine_${books[1].id.hashCode()}").assertDoesNotExist()
+        composeTestRule.onNodeWithTag("book_spine_${books[3].id.hashCode()}").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("book_face_${books[3].id.hashCode()}").assertDoesNotExist()
+    }
+
+    @Test fun tappingAFaceOutBookPlaysIt() {
         var played: Audiobook? = null
         show(onBookClick = { played = it })
         composeTestRule.onNodeWithContentDescription("Quiet Harbour, 71% listened").performClick()
         assertEquals("Quiet Harbour", played?.title)
+    }
+
+    @Test fun tappingASpinePlaysThatBook() {
+        var played: Audiobook? = null
+        show(onBookClick = { played = it })
+        composeTestRule.onNodeWithContentDescription("Glass Orchard, not started").performClick()
+        assertEquals("Glass Orchard", played?.title)
     }
 
     @Test fun aSavedFilterDoesNotHideShelves() {

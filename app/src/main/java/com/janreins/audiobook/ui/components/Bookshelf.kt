@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -38,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -103,9 +106,12 @@ private val ShelfSidePadding = 16.dp
 private val SpineInset = 6.dp
 private const val SPINE_GAP_DP = 3
 
+private val DisplayCoverSize = 100.dp
+
 /**
- * The library as a wooden bookcase: one shelf each for Continue listening, Up next and Finished,
- * with the books standing spine-out. Only the shelf rows on screen are drawn, so big libraries stay smooth.
+ * The library as a wooden bookcase: one shelf each for Continue listening, Up next and Finished.
+ * The books you're listening to stand face-out on the top shelf (it scrolls sideways when they don't fit);
+ * every other book stands spine-out. Only the shelf rows on screen are drawn, so big libraries stay smooth.
  */
 @Composable
 fun Bookshelf(
@@ -133,8 +139,12 @@ fun Bookshelf(
         val rowWidth = (maxWidth - ShelfSidePadding * 2 - SpineInset * 2).value.toInt()
         val shelves = remember(sections, rowWidth) {
             sections.map { section ->
-                val widths = section.books.map { ShelfLayout.spineWidthDp(it.durationMs) }
-                section to ShelfLayout.packRows(widths, rowWidth, SPINE_GAP_DP).map { section.books.slice(it) }
+                if (section.shelf.isDisplayShelf()) {
+                    section to listOf(section.books)
+                } else {
+                    val widths = section.books.map { ShelfLayout.spineWidthDp(it.durationMs) }
+                    section to ShelfLayout.packRows(widths, rowWidth, SPINE_GAP_DP).map { section.books.slice(it) }
+                }
             }
         }
         LazyColumn(
@@ -146,8 +156,13 @@ fun Bookshelf(
                     ShelfHeader(section, colors)
                 }
                 rows.forEachIndexed { index, books ->
-                    item(key = "shelf_${section.shelf}_$index", contentType = "row") {
-                        ShelfRow(books, stateOf, currentBookId, isPlaying, colors, onBookClick, onMarkFinished, onMarkUnplayed)
+                    val display = section.shelf.isDisplayShelf()
+                    item(key = "shelf_${section.shelf}_$index", contentType = if (display) "display" else "row") {
+                        if (display) {
+                            DisplayShelf(books, stateOf, currentBookId, isPlaying, colors, onBookClick, onMarkFinished, onMarkUnplayed)
+                        } else {
+                            ShelfRow(books, stateOf, currentBookId, isPlaying, colors, onBookClick, onMarkFinished, onMarkUnplayed)
+                        }
                     }
                 }
             }
@@ -220,6 +235,86 @@ private fun ShelfRow(
     }
 }
 
+/** The top shelf: books you're listening to, covers facing out like a bookshop display. */
+@Composable
+private fun DisplayShelf(
+    books: List<Audiobook>,
+    stateOf: (Audiobook) -> SpineState,
+    currentBookId: String?,
+    isPlaying: Boolean,
+    colors: ShelfColors,
+    onBookClick: (Audiobook) -> Unit,
+    onMarkFinished: (Audiobook) -> Unit,
+    onMarkUnplayed: (Audiobook) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        LazyRow(
+            modifier = Modifier.fillMaxWidth().testTag("display_shelf"),
+            contentPadding = PaddingValues(start = SpineInset, end = SpineInset, top = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.Bottom
+        ) {
+            items(books, key = { it.id }) { book ->
+                FaceOutBook(
+                    book = book,
+                    state = stateOf(book),
+                    isCurrent = book.id == currentBookId,
+                    isPlaying = isPlaying,
+                    accent = colors.accent,
+                    onClick = { onBookClick(book) },
+                    onMarkFinished = { onMarkFinished(book) },
+                    onMarkUnplayed = { onMarkUnplayed(book) }
+                )
+            }
+        }
+        Plank(colors)
+    }
+}
+
+@Composable
+fun FaceOutBook(
+    book: Audiobook,
+    state: SpineState,
+    isCurrent: Boolean,
+    isPlaying: Boolean,
+    accent: Color,
+    onClick: () -> Unit,
+    onMarkFinished: () -> Unit,
+    onMarkUnplayed: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var showMenu by remember { mutableStateOf(false) }
+    Box(modifier = modifier) {
+        Box(
+            modifier = Modifier
+                .size(DisplayCoverSize)
+                .shadow(6.dp, RoundedCornerShape(3.dp))
+                .shelfBookActions(book, state, isCurrent, isPlaying, onClick, onMarkFinished, onMarkUnplayed) { showMenu = true }
+                .testTag("book_face_${book.id.hashCode()}")
+        ) {
+            BookCover(book = book, modifier = Modifier.fillMaxSize(), cornerRadius = 3.dp, showPlayingOverlay = isCurrent)
+            if (state.progress > 0f && !state.finished) {
+                // How far through: a bar along the bottom of the cover.
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .background(Color.Black.copy(alpha = 0.45f))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(state.progress.coerceIn(0f, 1f))
+                            .fillMaxHeight()
+                            .background(accent)
+                    )
+                }
+            }
+        }
+        ShelfBookMenu(showMenu, state, onDismiss = { showMenu = false }, onMarkFinished, onMarkUnplayed)
+    }
+}
+
 @Composable
 private fun Plank(colors: ShelfColors) {
     Box(
@@ -256,7 +351,6 @@ private val RibbonShape = GenericShape { size, _ ->
     close()
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun BookSpine(
     book: Audiobook,
@@ -271,18 +365,6 @@ fun BookSpine(
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val base = Color(CoverPlaceholders.PALETTE[CoverPlaceholders.colorIndex(book.id, CoverPlaceholders.PALETTE.size)])
-    val canUnplay = state.finished || state.started
-    val description = buildString {
-        append(book.title)
-        append(
-            when {
-                state.finished -> ", finished"
-                state.started -> ", ${(state.progress * 100).roundToInt()}% listened"
-                else -> ", not started"
-            }
-        )
-        if (isCurrent) append(if (isPlaying) ", playing" else ", paused")
-    }
 
     // The book that's loaded in the player sticks out a little above the others.
     Box(modifier = modifier.offset(y = if (isCurrent) (-8).dp else 0.dp)) {
@@ -298,19 +380,7 @@ fun BookSpine(
                         1f to lerp(base, Color.Black, 0.28f)
                     )
                 )
-                .combinedClickable(
-                    onClickLabel = "Play",
-                    onLongClickLabel = "Options",
-                    onClick = onClick,
-                    onLongClick = { showMenu = true }
-                )
-                .clearAndSetSemantics {
-                    contentDescription = description
-                    customActions = buildList {
-                        if (!state.finished) add(CustomAccessibilityAction("Mark as finished") { onMarkFinished(); true })
-                        if (canUnplay) add(CustomAccessibilityAction("Mark as unplayed") { onMarkUnplayed(); true })
-                    }
-                }
+                .shelfBookActions(book, state, isCurrent, isPlaying, onClick, onMarkFinished, onMarkUnplayed) { showMenu = true }
                 .testTag("book_spine_${book.id.hashCode()}")
         ) {
             SpineBandLine(Modifier.align(Alignment.TopCenter).padding(top = 10.dp))
@@ -364,16 +434,65 @@ fun BookSpine(
                     .background(accent, RibbonShape)
             )
         }
-        DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-            if (!state.finished) {
-                DropdownMenuItem(text = { Text("Mark as finished") }, onClick = { showMenu = false; onMarkFinished() })
+        ShelfBookMenu(showMenu, state, onDismiss = { showMenu = false }, onMarkFinished, onMarkUnplayed)
+    }
+}
+
+/** Read out as, for example, "Quiet Harbour, 71% listened" or "The Salt Road, 42% listened, playing". */
+internal fun shelfBookDescription(book: Audiobook, state: SpineState, isCurrent: Boolean, isPlaying: Boolean): String =
+    buildString {
+        append(book.title)
+        append(
+            when {
+                state.finished -> ", finished"
+                state.started -> ", ${(state.progress * 100).roundToInt()}% listened"
+                else -> ", not started"
             }
-            if (canUnplay) {
-                DropdownMenuItem(text = { Text("Mark as unplayed") }, onClick = { showMenu = false; onMarkUnplayed() })
-            }
+        )
+        if (isCurrent) append(if (isPlaying) ", playing" else ", paused")
+    }
+
+/** Tap plays; press and hold opens the menu. TalkBack gets the same two menu actions. */
+@OptIn(ExperimentalFoundationApi::class)
+private fun Modifier.shelfBookActions(
+    book: Audiobook,
+    state: SpineState,
+    isCurrent: Boolean,
+    isPlaying: Boolean,
+    onClick: () -> Unit,
+    onMarkFinished: () -> Unit,
+    onMarkUnplayed: () -> Unit,
+    onLongClick: () -> Unit
+): Modifier = this
+    .combinedClickable(onClickLabel = "Play", onLongClickLabel = "Options", onClick = onClick, onLongClick = onLongClick)
+    .clearAndSetSemantics {
+        contentDescription = shelfBookDescription(book, state, isCurrent, isPlaying)
+        customActions = buildList {
+            if (!state.finished) add(CustomAccessibilityAction("Mark as finished") { onMarkFinished(); true })
+            if (state.finished || state.started) add(CustomAccessibilityAction("Mark as unplayed") { onMarkUnplayed(); true })
+        }
+    }
+
+@Composable
+private fun ShelfBookMenu(
+    expanded: Boolean,
+    state: SpineState,
+    onDismiss: () -> Unit,
+    onMarkFinished: () -> Unit,
+    onMarkUnplayed: () -> Unit
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        // Only offer what would change something.
+        if (!state.finished) {
+            DropdownMenuItem(text = { Text("Mark as finished") }, onClick = { onDismiss(); onMarkFinished() })
+        }
+        if (state.finished || state.started) {
+            DropdownMenuItem(text = { Text("Mark as unplayed") }, onClick = { onDismiss(); onMarkUnplayed() })
         }
     }
 }
+
+private fun Shelf.isDisplayShelf(): Boolean = this == Shelf.CONTINUE_LISTENING
 
 @Composable
 private fun SpineBandLine(modifier: Modifier) {
