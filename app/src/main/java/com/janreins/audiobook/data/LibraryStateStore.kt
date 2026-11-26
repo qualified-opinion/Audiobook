@@ -42,6 +42,15 @@ class LibraryStateStore(context: Context) {
         prefs.edit().putString("library_filter", filter.name).apply()
     }
 
+    /** New installs and updates open on the bookshelf; "Show as list" in the ⋮ menu switches back. */
+    fun getView(): LibraryView = LibraryView.entries.firstOrNull {
+        it.name == prefs.getString("library_view", null)
+    } ?: LibraryView.SHELVES
+
+    fun setView(view: LibraryView) {
+        prefs.edit().putString("library_view", view.name).apply()
+    }
+
     /** Asks the library to re-sort: explicit finished/unplayed changes and book changes only. */
     fun notifyProgressChanged() {
         version.value += 1L
