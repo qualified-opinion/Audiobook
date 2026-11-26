@@ -52,3 +52,20 @@ val CleanOnSurfaceDark = Color(0xFFE2E2E6)
 val CleanOnSurfaceVariantDark = Color(0xFFC4C7CF)
 val CleanOutlineDark = Color(0xFF8E9099)
 val CleanOutlineVariantDark = Color(0xFF44474F)
+
+// Bookshelf (library "bookshelf" view): oak shelves by day, walnut under a warm lamp at night.
+val WoodWallLight = Color(0xFFF2E5D1)
+val WoodPlankTopLight = Color(0xFFCF9A60)
+val WoodPlankBottomLight = Color(0xFFA46C38)
+val WoodLabelLight = Color(0xFF3A2A1C)
+val WoodAccentLight = Color(0xFFC0641E)
+
+val WoodWallDark = Color(0xFF24180F)
+val WoodGlowDark = Color(0x2EFFB86A)
+val WoodPlankTopDark = Color(0xFF6A4427)
+val WoodPlankBottomDark = Color(0xFF45291A)
+val WoodLabelDark = Color(0xFFF1E3CF)
+val WoodAccentDark = Color(0xFFF0A050)
+
+val SpineTitle = Color(0xFFF6ECDA)
+val SpineBand = Color(0xB3E9C98A)

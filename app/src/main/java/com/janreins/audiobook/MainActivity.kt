@@ -65,6 +65,7 @@ fun AudiobookApp(
     val libraryVersion by viewModel.libraryVersion.collectAsState()
     val librarySort by viewModel.librarySort.collectAsState()
     val libraryFilter by viewModel.libraryFilter.collectAsState()
+    val libraryView by viewModel.libraryView.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val scannedFileCount by viewModel.scannedFileCount.collectAsState()
     val currentPlayingBook by viewModel.currentPlayingBook.collectAsState()
@@ -153,6 +154,8 @@ fun AudiobookApp(
                     statusOf = viewModel::getBookStatus,
                     onSortChange = viewModel::setLibrarySort,
                     onFilterChange = viewModel::setLibraryFilter,
+                    view = libraryView,
+                    onViewChange = viewModel::setLibraryView,
                     onMarkFinished = viewModel::markFinished,
                     onMarkUnplayed = viewModel::markUnplayed,
                     isLoading = isLoading,

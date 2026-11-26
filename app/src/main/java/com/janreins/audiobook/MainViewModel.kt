@@ -14,6 +14,7 @@ import com.janreins.audiobook.data.BookStatus
 import com.janreins.audiobook.data.LibraryStateStore
 import com.janreins.audiobook.data.LibrarySort
 import com.janreins.audiobook.data.LibraryFilter
+import com.janreins.audiobook.data.LibraryView
 import com.janreins.audiobook.data.ListeningBackup
 import com.janreins.audiobook.data.ListeningBackupStore
 import com.janreins.audiobook.data.model.BookProgress
@@ -65,6 +66,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setLibraryFilter(filter: LibraryFilter) {
         libraryState.setFilter(filter)
         _libraryFilter.value = filter
+    }
+
+    private val _libraryView = MutableStateFlow(libraryState.getView())
+    val libraryView = _libraryView.asStateFlow()
+
+    fun setLibraryView(view: LibraryView) {
+        libraryState.setView(view)
+        _libraryView.value = view
     }
 
     fun getBookStatus(book: Audiobook): BookStatus {
